@@ -433,10 +433,10 @@ function drawCust(now){const y=65+36*spLayout(false).sc;
 function tapEl(el){if(!rdest||!ctx||el._tap)return;try{const n=ctx.createMediaElementSource(el);el._tap=true;n.connect(ctx.destination);n.connect(rdest)}catch(e){}}
 function recStart(){if(rec)return;ensure();ctx.resume();if(!rdest){rdest=ctx.createMediaStreamDestination();const o=ctx.createOscillator(),z=ctx.createGain();z.gain.value=0;o.connect(z);z.connect(rdest);o.start()}
  mons.forEach(M=>{if(M.kind==="url"&&M.gain&&!M.rt){try{M.gain.connect(rdest);M.rt=true}catch(e){}}});if(bgVid)tapEl(bgVid);
- let vs;try{vs=cv.captureStream(30)}catch(e){return setNote("RECORD BLOCKED BY VIDEO")}
- const T=["video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"],mt=window.MediaRecorder&&T.find(t=>MediaRecorder.isTypeSupported(t));
+ let vs;try{vs=cv.captureStream(60);try{vs.getVideoTracks()[0].applyConstraints({frameRate:60}).catch(()=>{})}catch(e){}}catch(e){return setNote("RECORD BLOCKED BY VIDEO")}
+ const T=["video/mp4;codecs=avc1.64002A,mp4a.40.2","video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1.4D0028,mp4a.40.2","video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"],mt=window.MediaRecorder&&T.find(t=>MediaRecorder.isTypeSupported(t));
  if(!mt)return setNote("RECORD NOT SUPPORTED");
- let r;try{r=new MediaRecorder(new MediaStream([...vs.getVideoTracks(),...rdest.stream.getAudioTracks()]),{mimeType:mt,videoBitsPerSecond:8e6,audioBitsPerSecond:192e3})}catch(e){return setNote("RECORD NOT SUPPORTED")}
+ let r;try{r=new MediaRecorder(new MediaStream([...vs.getVideoTracks(),...rdest.stream.getAudioTracks()]),{mimeType:mt,videoBitsPerSecond:12e6,audioBitsPerSecond:192e3})}catch(e){return setNote("RECORD NOT SUPPORTED")}
  const ch=[];r.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data)};
  r.onstop=()=>{const ext=mt.startsWith("video/mp4")?"mp4":"webm",u=URL.createObjectURL(new Blob(ch,{type:mt.split(";")[0]})),a=document.createElement("a"),d=new Date,p=n=>String(n).padStart(2,"0");
   a.href=u;a.download=`EASyWEB-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),6e4);setNote("RECORDING SAVED")};
@@ -446,7 +446,7 @@ function recStop(){if(!rec)return;clearInterval(rec.iv);const r=rec.r;rec=null;t
 // LCD
 function lcd(){const d=new Date,p=n=>String(n).padStart(2,"0"),c=s=>s.padStart(Math.floor((20+s.length)/2)).padEnd(20);
  const att=mons.some(M=>M.scr===SCR&&M.attAt&&performance.now()-M.attAt<600)||(fileAtt&&performance.now()-fileAtt<600),act=alerts.filter(a=>a.exp&&a.exp>d&&a.scr===SCR&&a.m.type==="ZCZC").map(a=>a.m.evt).join(" ");
- const L=[c("§ EASyWEB V01.00"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");$("#lcd").textContent=L;$("#lcdm").textContent=L}
+ const L=[c("§ EASyWEB V01.01"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");$("#lcd").textContent=L;$("#lcdm").textContent=L}
 function fit(){const c=document.createElement("canvas").getContext("2d");c.font="100px Matrix5x8";const w=c.measureText("0").width/100||.6;["#lcd","#lcdm"].forEach(s=>{const e=$(s);if(e.clientWidth>16)e.style.fontSize=Math.min(30,(e.clientWidth-16)/(20*w))+"px"})}
 // log
 function render(){$("#log").innerHTML=alerts.filter(a=>a.scr===SCR).map(a=>{const m=a.m;return m.type==="NNNN"?`<div class="e"><b>EOM</b> <small>${esc(a.when)} / ${esc(a.src)}</small></div>`:
@@ -499,8 +499,11 @@ function holdEnd(){holdOn=false;muteOn=false;fz=null;blackUntil=null;
 let tuneOn=false,tuneCh=2,tuneAud=null,tuneAu=null;const TUNE_BLANK=400;
 // Tune audio gets the same EASyPLUS FX as the alert message (cached per FX mode; falls back to the untouched file if it could not be decoded)
 function tuneUrl(t){if(!fxOn||!t.pcm)return t.url;const k=fxNoise?"n":"q";if(!t.fx[k]){try{const y=easyFx(t.pcm,t.rate,fxNoise);t.fx[k]=wav([y],48000)}catch(e){return t.url}}return t.fx[k]}
-function tuneRun(a,n){const aud=tuneAud,dur=aud?500+aud.dur*1000+500:3000,turl=aud?tuneUrl(aud):null;
- if(aud)setTimeout(()=>{if(!(cur&&cur.tu&&cur.a===a))return;const au=new Audio(turl);tuneAu=au;tapEl(au);au.play().catch(()=>{})},500);
+function tuneBuf(t){if(!t.pcm)return null;if(!fxOn)return{x:t.pcm,r:t.rate};const k=fxNoise?"n":"q";t.fb=t.fb||{};if(!t.fb[k]){try{t.fb[k]=easyFx(t.pcm,t.rate,fxNoise)}catch(e){return{x:t.pcm,r:t.rate}}}return{x:t.fb[k],r:48000}}
+function tuneRun(a,n){const aud=tuneAud,dur=aud?500+aud.dur*1000+500:3000,tb=aud?tuneBuf(aud):null,turl=aud&&!tb?tuneUrl(aud):null;
+ if(aud)setTimeout(()=>{if(!(cur&&cur.tu&&cur.a===a))return;ensure();
+  if(tb&&ctx){try{const bf=ctx.createBuffer(1,tb.x.length,tb.r);if(bf.copyToChannel)bf.copyToChannel(tb.x,0);else bf.getChannelData(0).set(tb.x);const sn=ctx.createBufferSource();sn.buffer=bf;sn.connect(ctx.destination);if(rdest)sn.connect(rdest);sn.start();tuneAu=sn;return}catch(e){}}
+  const au=new Audio(turl||aud.url);tuneAu=au;tapEl(au);au.play().catch(()=>{})},500);
  return{end:n+dur}}
 function drawTune(m){const R=k=>65+36*k;ctrW(orgN(m),R(1));ctr("Issued "+art(evN(m)),R(3));ctrW(evN(m),R(5));ctr("Tune to Channel "+tuneCh,R(8));ctr("for Further Information",R(9))}
 function activate(a){const n=performance.now();let t0=n;const tu=tuneOn&&cgen?tuneRun(a,n):null;if(!holdOn){holdBegin();t0=n+PAGE_DELAY}else blackUntil=null;
@@ -527,7 +530,7 @@ function applyVol(M){if(M.noCors&&M.el){M.el.muted=!M.listen||muteHold();M.el.vo
 $("#mons").oninput=e=>{const c=e.target.closest("[data-v]");if(!c)return;const M=mons.find(x=>x.id===+c.dataset.v);if(!M)return;M.vol=c.value/100;const l=document.querySelector(`[data-vl="${M.id}"]`);if(l)l.textContent=c.value+"%";applyVol(M)};
 $("#mv").oninput=e=>{mvol=e.target.value/100;$("#mvl").textContent=e.target.value+"%";mons.forEach(applyVol)};
 async function loadDevs(){try{const d=(await navigator.mediaDevices.enumerateDevices()).filter(x=>x.kind==="audioinput"),v=$("#dev").value;$("#dev").innerHTML=d.map((x,i)=>`<option value="${x.deviceId}">${esc(x.label||"Input "+(i+1))}</option>`).join("");if(v)$("#dev").value=v}catch(e){}}
-function go(s){clearTimeout(abortT);abortT=0;[...mons].forEach(M=>rmMon(M.id,true));playQ=[];dispQ=[];queue=[];cur=null;selMon=null;if(curAu){curAu.pause();curAu=null}if(tuneAu){tuneAu.pause();tuneAu=null}playingA=false;gph="";gsend="";gscr="";gtail=null;lastCur=null;holdEnd();SCR=s;note="";fileAtt=0;if(s!=="menu")ensure();
+function go(s){clearTimeout(abortT);abortT=0;[...mons].forEach(M=>rmMon(M.id,true));playQ=[];dispQ=[];queue=[];cur=null;selMon=null;if(curAu){curAu.pause();curAu=null}if(tuneAu){try{if(tuneAu.stop)tuneAu.stop();else tuneAu.pause()}catch(_){}tuneAu=null}playingA=false;gph="";gsend="";gscr="";gtail=null;lastCur=null;holdEnd();SCR=s;note="";fileAtt=0;if(s!=="menu")ensure();
  $("#menu").hidden=s!=="menu";$("#about").hidden=true;document.querySelector(".app").hidden=s==="menu";document.querySelector(".app").dataset.scr=s;
  $("#ttl").textContent={imp:"Import Audio",str:"Stream Monitor",url:"URL Monitor"}[s]||"";$("#fm").value="";$("#fa").value="";render();renderMons();fit();lcd()}
 $("#abtb").onclick=()=>{$("#menu").hidden=true;$("#about").hidden=false;window.scrollTo(0,0)};$("#abk").onclick=()=>{$("#about").hidden=true;$("#menu").hidden=false};
@@ -598,10 +601,11 @@ $("#tuc").oninput=e=>{const v=parseInt(e.target.value,10);if(Number.isFinite(v))
 $("#tuc").onchange=e=>{const v=parseInt(e.target.value,10);tuneCh=Number.isFinite(v)?Math.max(0,Math.min(99,v)):tuneCh;e.target.value=tuneCh};
 function clearTune(){if(tuneAud){URL.revokeObjectURL(tuneAud.url);Object.values(tuneAud.fx||{}).forEach(u=>URL.revokeObjectURL(u))}tuneAud=null;$("#tuf").value=""}
 $("#tub").onclick=()=>$("#ftu").click();$("#tux").onclick=clearTune;
-$("#ftu").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return;const u=URL.createObjectURL(f),au=new Audio();au.preload="metadata";
- au.onloadedmetadata=()=>{if(!isFinite(au.duration)||au.duration<=0){URL.revokeObjectURL(u);return setNote("BAD AUDIO FILE")}clearTune();const ta={url:u,dur:au.duration,pcm:null,rate:48000,fx:{}};tuneAud=ta;
-  f.arrayBuffer().then(ab=>{const ac=new(window.AudioContext||window.webkitAudioContext)({sampleRate:48000});return ac.decodeAudioData(ab).then(b=>{ac.close();const x=new Float32Array(b.length);for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/b.numberOfChannels}ta.rate=b.sampleRate;ta.pcm=x},er=>{ac.close();throw er})}).catch(()=>{});$("#tuf").value=f.name;setNote("TUNE AUDIO LOADED")};
- au.onerror=()=>{URL.revokeObjectURL(u);setNote("BAD AUDIO FILE")};au.src=u};
+$("#ftu").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;ensure();
+ let b;try{const ac=mkAC(48000);b=await decAB(ac,await rdAB(f));try{ac.close()}catch(_){}}catch(er){return setNote("BAD AUDIO FILE")}
+ if(!b||!isFinite(b.duration)||b.duration<=0)return setNote("BAD AUDIO FILE");
+ const x=new Float32Array(b.length);for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/b.numberOfChannels}
+ clearTune();tuneAud={url:URL.createObjectURL(f),dur:b.duration,pcm:x,rate:b.sampleRate,fx:{},fb:{}};$("#tuf").value=f.name;setNote("TUNE AUDIO LOADED")};
 // Abort: cut the alert audio straight to the EOM tones (jumps the playing alert to the start of the EOM bursts)
 $("#abt").onclick=()=>{if(!playingA||!curAu||!lastPlay)return setNote("NO ALERT PLAYING");if(abortT)return;const sn=lastPlay.a.snd;if(!sn||!sn.E)return setNote("NO EOM IN ALERT");const au=curAu,t=sn.E[0]-.02;if(au.currentTime>=t)return setNote("ALREADY AT EOM");
  au.pause();setNote("MESSAGE ABORTED"); // the message stops at once, then 1 s of silence, then the EOM bursts
@@ -626,10 +630,18 @@ $("#fvid").onchange=e=>{const f=e.target.files[0];e.target.value="";if(!f)return
  v.onerror=()=>{URL.revokeObjectURL(u);setNote("BAD VIDEO FILE")};v.src=u};
 $("#cvd").onclick=()=>{dropVid();$("#fv").value=""};
 $("#fx").onclick=()=>{if(fxOn&&fxNoise)fxNoise=false;else if(fxOn)fxOn=false;else{fxOn=true;fxNoise=true}$("#fx").classList.toggle("off",!fxOn);$("#fxt").textContent=!fxOn?"EASyPLUS FX: off":fxNoise?"EASyPLUS FX: on":"EASyPLUS FX with no noise: on"}; // cycles: EASyPLUS -> EASyPLUS No Noise -> off
+// File pickers: iOS/iPadOS Safari only offers the Photos/video picker when "video/*" is in accept, and can grey out audio files, so on Apple devices the filter is removed (the decoder rejects non-audio files). Elsewhere the filter lists extensions explicitly.
+const APPLE=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const AEXT=".mp3,.wav,.m4a,.aac,.ogg,.oga,.opus,.flac,.aif,.aiff,.caf,.weba,.wma,.3gp,.amr",VEXT=".mp4,.m4v,.mov,.webm,.mkv";
+[["#fia","audio/*,"+AEXT+",video/*,"+VEXT],["#ftu","audio/*,"+AEXT],["#fim","audio/*,"+AEXT+",video/*,"+VEXT]].forEach(([q,a])=>{const e=$(q);if(!e)return;if(APPLE)e.removeAttribute("accept");else e.setAttribute("accept",a)});
+// Safari older than 14.1 has no promise decodeAudioData, no AudioContext sampleRate option and no Blob.arrayBuffer
+function mkAC(r){const C=window.AudioContext||window.webkitAudioContext;try{return new C({sampleRate:r})}catch(e){return new C()}}
+function decAB(ac,ab){return new Promise((res,rej)=>{try{const p=ac.decodeAudioData(ab,res,rej);if(p&&p.then)p.then(res,rej)}catch(e){rej(e)}})}
+function rdAB(f){return f.arrayBuffer?f.arrayBuffer():new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsArrayBuffer(f)})}
 // Import Audio: offline decode of a file
 $("#ba").onclick=()=>$("#fia").click();
-$("#fia").onchange=async e=>{const f=e.target.files[0];if(!f)return;$("#fa").value=f.name;setNote("DECODING...");await new Promise(r=>setTimeout(r,30));
- try{const ac=new(window.AudioContext||window.webkitAudioContext)({sampleRate:22050}),buf=await ac.decodeAudioData(await f.arrayBuffer());ac.close();
+$("#fia").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;$("#fa").value=f.name;setNote("DECODING...");await new Promise(r=>setTimeout(r,30));
+ try{const ac=mkAC(22050),buf=await decAB(ac,await rdAB(f));try{ac.close()}catch(_){}
   const x=new Float32Array(buf.length);for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/buf.numberOfChannels}
   const res=[],dd=new SameDec(buf.sampleRate,m=>{if(!res.some(p=>p.raw===m.raw&&Math.abs(p.t-m.t)<30))res.push(m)},m=>{if(m.final)res.push(m)});for(let i=0;i<x.length;i+=16384)dd.push(x.subarray(i,i+16384));
   if(!res.length)return setNote("NO SAME FOUND");
