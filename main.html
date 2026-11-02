@@ -248,8 +248,10 @@ function completeBursts(x,fs,bu){const hs=bu.filter(u=>u.k==="H"),out=bu.slice()
 // Rebuild the alert (encoder order): generated SAME headers, 1 s silence, generated attention tone, 1 s silence, then ONLY the voice message from the
 // original audio. Everything else in the original (the headers, attention tone, anything between them and the message, anything after the message and the
 // original EOM) is muted. After the message the audio stays muted for the rest of the alert: 1 s of silence, then newly generated EOM bursts (x3).
+function hgrp(a){const g=[];for(const u of a){if(g.length&&(u.t-g[g.length-1].e>2.5||g.length>=3))break;g.push(u)}return g}
+function egrp(a){const g=[];for(let i=a.length-1;i>=0;i--){const u=a[i];if(g.length&&(g[0].t-u.e>2.5||g.length>=3))break;g.unshift(u)}return g}
 function regen(x,bu,sp,fs,out){const L=x.length,Ea=bu.filter(u=>u.k==="E"),Ha=bu.filter(u=>u.k==="H"),
-  H=Ha.slice(0,3),E=Ea.slice(-3), // only the first 3 headers and the last 3 EOM bursts are regenerated; any extra header or EOM burst stays inside the audio message as heard
+  H=hgrp(Ha),E=egrp(Ea), // only the leading header group (up to 3 bursts, each within 2.5 s of the previous) and the trailing EOM group are regenerated; any later header, attention tone or EOM burst is part of the audio message and stays as heard
  e0=E.length?E[0].t:L/fs,lastH=H.length?Math.max(...H.map(u=>u.e)):0,
   at=sp.find(q=>q[0]>=lastH-.2&&q[0]<e0)||null,s0=at?at[1]:lastH,f=Math.max(1,Math.round(.01*fs)),
   GAP=.86,ATT_GAP=1,MSG_GAP=1,EOM_GAP=1,rt=H.length>0&&H.every(u=>u.t<e0),tn=new Map(),tail=Math.min(2,Math.max(.3,L/fs-(E.length?E[E.length-1].e:e0)));
@@ -258,7 +260,7 @@ function regen(x,bu,sp,fs,out){const L=x.length,Ea=bu.filter(u=>u.k==="E"),Ha=bu
  {const F=Math.round(.02*fs),i0=Math.max(0,Math.floor(s0*fs)),i1=Math.min(L,Math.floor(e0*fs)),r=[];
   for(let i=i0;i+F<=i1;i+=F){let q=0;for(let j=0;j<F;j++)q+=x[i+j]*x[i+j];r.push(Math.sqrt(q/F))}
   if(r.length){const p=[...r].sort((u,v)=>u-v)[Math.floor(r.length*.95)],th=Math.max(5e-4,.08*p),a0=r.findIndex(v=>v>=th);let b0=r.length-1;while(b0>=0&&r[b0]<th)b0--;
-   if(a0>=0&&b0>=a0&&(b0-a0+1)*.02>=.2){ms=Math.max(ms,i0/fs+a0*.02-.1);me=Math.min(me,i0/fs+(b0+1)*.02+.15)}}}
+   if(a0>=0&&b0>=a0&&(b0-a0+1)*.02>=.2){ms=Math.max(ms,i0/fs+a0*.02-.06);me=Math.min(me,i0/fs+(b0+1)*.02+.06)}}}
  if(me<=ms){ms=s0+.03;me=Math.max(ms+.1,e0-.03)}
  const a=Math.max(0,Math.round(ms*fs)),b=Math.min(L,Math.round(me*fs));
  let shift=0,attT=at?at[0]:0,end=L/fs,bu2=bu;
@@ -279,15 +281,17 @@ function regen(x,bu,sp,fs,out){const L=x.length,Ea=bu.filter(u=>u.k==="E"),Ha=bu
  if(out)out.bu=bu2.map(u=>tn.has(u)?{...u,t:tn.get(u),e:tn.get(u)+(u.e-u.t)}:u);return o}
 function fxwav(ch,fs,info){let n=0;ch.forEach(c=>n+=c.length);let x=new Float32Array(n);let o=0;ch.forEach(c=>{x.set(c,o);o+=c.length});
  const raw0=findBursts(x,fs),full=raw0.some(u=>u.k==="H"); // FX whenever the decoder understood a SAME header (a missing attention tone is generated, a missing EOM is regenerated)
- let bu=completeBursts(x,fs,raw0);const rg={};x=regen(x,bu,attSpans(x,fs),fs,rg);if(rg.bu)bu=rg.bu;let hits=attScan(x,fs);
- if(!hits.length){const H=bu.filter(u=>u.k==="H");if(H.length){const i=Math.min(x.length,Math.round(Math.max(...H.map(u=>u.e))*fs)),g=Math.round(fs),T=genAtt(fs,8),y=new Float32Array(x.length+2*g+T.length);y.set(x.subarray(0,i));y.set(T,i+g);y.set(x.subarray(i),i+2*g+T.length);if(rg.msg)rg.msg=rg.msg.map(v=>v+(2*g+T.length)/fs);x=y;bu=findBursts(x,fs);hits=attScan(x,fs)}}
+ let bu=completeBursts(x,fs,raw0);const rg={};x=regen(x,bu,attSpans(x,fs),fs,rg);if(rg.bu)bu=rg.bu;let hits=attScan(x,fs).filter(h=>!rg.msg||h<rg.msg[0]);
+ if(!hits.length){const H=bu.filter(u=>u.k==="H");if(H.length){const i=Math.min(x.length,Math.round(Math.max(...H.map(u=>u.e))*fs)),g=Math.round(fs),T=genAtt(fs,8),y=new Float32Array(x.length+2*g+T.length);y.set(x.subarray(0,i));y.set(T,i+g);y.set(x.subarray(i),i+2*g+T.length);if(rg.msg)rg.msg=rg.msg.map(v=>v+(2*g+T.length)/fs);x=y;{const shT=(2*g+T.length)/fs,i0t=i/fs;bu=bu.map(u=>u.t>=i0t-1e-3?{...u,t:u.t+shT,e:u.e+shT}:u)}hits=attScan(x,fs).filter(h=>!rg.msg||h<rg.msg[0])}}
  if(info)info.att=hits;
- const pb=bu.concat(attSpans(x,fs).map(([a,b])=>({k:"A",t:a,e:b}))).sort((p,q)=>p.t-q.t);
- if(info){const sp=k=>{const u=bu.filter(v=>v.k===k);return u.length?[Math.min(...u.map(v=>v.t)),Math.max(...u.map(v=>v.e))]:null};info.snd={H:sp("H"),E:sp("E"),A:attSpans(x,fs)}} // attention tones get the same relay pops as the header sections
+ const attTrue=attSpans(x,fs).filter(q=>!rg.msg||q[0]<rg.msg[0]-.5); // only the attention tone that follows the headers; a tone inside the message is message audio
+ const pb=bu.concat(attTrue.map(([a,b])=>({k:"A",t:a,e:b}))).sort((p,q)=>p.t-q.t);
+ if(info){const sp=k=>{const u=bu.filter(v=>v.k===k);return u.length?[Math.min(...u.map(v=>v.t)),Math.max(...u.map(v=>v.e))]:null};let M=null;{const E=sp("E");if(rg.msg&&attTrue.length&&E){const m0=Math.max(0,Math.floor(rg.msg[0]*fs)),m1=Math.min(x.length,Math.ceil(rg.msg[1]*fs)),F=Math.round(.02*fs);let mx=0;for(let i=m0;i+F<=m1;i+=F){let q=0;for(let j=0;j<F;j++)q+=x[i+j]*x[i+j];mx=Math.max(mx,Math.sqrt(q/F))}if(mx>.01)M=[attTrue[attTrue.length-1][1],E[0]]}} // audio message span (attention tone end to EOM start), only when there is a message
+  info.snd={H:sp("H"),E:sp("E"),A:attTrue,M}} // attention tones get the same relay pops as the header sections
  if(!fxOn)return wav([addPops(x,fs,pb)],fs);
  const R=48000,y=Float32Array.from(resamp(x,fs,R));
  // splice: the message is cut out of the audio (the header, attention tone and EOM bursts, plus any extra bursts left inside the message, are removed), EASyPLUS FX is applied to it, and it is put back
- if(full&&rg.msg){const w0=rg.msg[0],w1=Math.min(x.length/fs,rg.msg[1]),ex=[];findBursts(x,fs).forEach(u=>ex.push([u.t,u.e]));attSpans(x,fs).forEach(q=>ex.push(q));
+ if(full&&rg.msg){const w0=rg.msg[0],w1=Math.min(x.length/fs,rg.msg[1]),ex=[];bu.forEach(u=>ex.push([u.t,u.e]));attTrue.forEach(q=>ex.push(q));
   const cut=ex.map(([p,q])=>[p-.03,q+.03]).filter(([p,q])=>q>w0&&p<w1).sort((p,q)=>p[0]-q[0]),seg=[];let c=w0;cut.forEach(([p,q])=>{if(p>c)seg.push([c,p]);c=Math.max(c,q)});if(c<w1)seg.push([c,w1]);
   const sg=seg.filter(q=>q[1]-q[0]>=.05);
   if(sg.length){const parts=sg.map(q=>x.slice(Math.round(q[0]*fs),Math.round(q[1]*fs))),off=[];let n=0;parts.forEach(p=>{off.push(n);n+=p.length});const cat=new Float32Array(n);parts.forEach((p,k)=>cat.set(p,off[k]));
@@ -337,7 +341,9 @@ let fileAtt=0,fileAttT;function fileHit(){fileAtt=performance.now();clearTimeout
 let gph="",gscr="",gsend="",gtail=null;
 const orgOf=a=>(a&&a.m&&a.m.org)||"EAS";
 function setPh(M,t){M.ph=t;lcd()}
-function attHit(M){M.attAt=performance.now();clearTimeout(M.attT);M.attT=setTimeout(lcd,650);
+function attHit(M){const R=M.rec,E=M.ean;if(R){if(R.att===2)return;R.att=1;clearTimeout(R.attT2);R.attT2=setTimeout(()=>{R.att=2},800)}
+ if(E&&!E.done&&!E.patch){E.att=1;E.hitMark=Math.max(0,M.total-4096);clearTimeout(E.attT2);E.attT2=setTimeout(()=>{E.att=2},800)}
+ M.attAt=performance.now();clearTimeout(M.attT);M.attT=setTimeout(lcd,650);
  if(M.rec&&M.ph!=="RECEIVING EOM"&&!(M.ph||"").endsWith("→")){M.ph="RECEIVING ATT TONE";clearTimeout(M.phT);M.phT=setTimeout(()=>{if(M.ph==="RECEIVING ATT TONE"){M.ph="RECORDING AUDIO MSG";lcd()}},900)}
  lcd()}
 function cgSt(){const n=performance.now();if(gscr!==SCR)return"";if(gsend)return gsend;
@@ -347,6 +353,7 @@ function cgSt(){const n=performance.now();if(gscr!==SCR)return"";if(gsend)return
  if(!cur&&!playingA&&gtail&&n<gtail.until&&gtail.scr===SCR)return tailTxt(gtail);
  return gph}
 const tailTxt=t=>{const x=String(t.txt||t.org).replace(/\s+/g," ").trim().toUpperCase();return x.length>20?x.slice(0,19)+"\u2192":x};
+let tuM=false,liveOn=false,AEL=null,aUnl=false,pendingTap=null,SILU=null;const liveTxt=a=>tailTxt({txt:a.text,org:orgOf(a)});
 function lcdStatus(){const g=cgSt(),M=mons.find(m=>m.scr===SCR&&m.ph);if(g)return g;return M?M.ph:""}
 const SEV={Warning:"#e22",Watch:"#f90",Advisory:"#ee0",Statement:"#38f",Information:"#3c3",Unknown:"#999"};
 const STN=Object.fromEntries("01AL,02AK,04AZ,05AR,06CA,08CO,09CT,10DE,11DC,12FL,13GA,15HI,16ID,17IL,18IN,19IA,20KS,21KY,22LA,23ME,24MD,25MA,26MI,27MN,28MS,29MO,30MT,31NE,32NV,33NH,34NJ,35NM,36NY,37NC,38ND,39OH,40OK,41OR,42PA,44RI,45SC,46SD,47TN,48TX,49UT,50VT,51VA,53WA,54WV,55WI,56WY,60AS,66GU,69MP,72PR,78VI".split(",").map(s=>[s.slice(0,2),s.slice(2)]));
@@ -394,7 +401,9 @@ function frame(now){g.setTransform(1,0,0,1,0,0);g.fillStyle="#000";g.fillRect(0,
  if(!cgen&&cur&&cur.endAt==null&&now>cur.until)cur=null;
  if(holdOn){if(cur||dispQ.length||playQ.length||playingA)blackUntil=null;else if(!blackOn)holdEnd();else if(blackUntil==null)blackUntil=now+BLACK_HOLD;else if(now>=blackUntil)holdEnd()}
  if(holdOn&&!vidRes&&cur&&now>=cur.t0){vidRes=true;fz=null;if(bgVid)bgVid.play().catch(()=>{})}
- if(holdOn&&!blackOn&&!muteOn&&muteCrawl&&cur&&now>=cur.t0){muteOn=true;holdMute()}
+ if(holdOn&&!blackOn&&!muteOn&&muteCrawl&&cur&&!cur.unm&&now>=cur.t0){muteOn=true;holdMute()}
+ // the tune-to screen always silences the video (even with no tune-to audio loaded); afterwards the normal crawl mute rules apply
+ {const th=!!(cur&&cur.tu&&now<cur.t0);if(holdOn&&th&&!tuM){tuM=true;holdMute()}else if(tuM&&(!th||!holdOn)){tuM=false;if(holdOn&&!blackOn&&!(muteCrawl&&muteOn)){mons.forEach(applyVol);if(bgVid)bgVid.muted=muteHold()}}}
  const tun=!!(cur&&cur.tu&&now<cur.tu.end),tbl=!!(cur&&cur.tu&&now>=cur.tu.end&&now<cur.t0),blk=tun||tbl||(blackUntil!=null&&now<blackUntil)||(mode==="full"&&cur&&now<cur.t0&&now>=cur.t0-400); // 400 ms blank page just before the full page starts
  g.fillStyle=blk?CM[cmode].bg:"#000";g.fillRect(0,0,640,480);
  const vd0=selMon&&selMon.el,vd=vd0&&vd0.videoWidth?vd0:(bgVid&&bgVid.videoWidth?bgVid:null);if(blk){}else if(vd){if(fz)g.drawImage(fz,0,0);else{const r=Math.min(640/vd.videoWidth,480/vd.videoHeight),w=vd.videoWidth*r,h=vd.videoHeight*r;g.drawImage(vd,(640-w)/2,(480-h)/2,w,h)}}else if(bgImg){const r=Math.min(640/bgImg.naturalWidth,480/bgImg.naturalHeight),w=bgImg.naturalWidth*r,h=bgImg.naturalHeight*r;g.drawImage(bgImg,(640-w)/2,(480-h)/2,w,h)}else if(cgen&&!(cur&&mode!=="full"&&!crawlBg)){g.fillStyle=CM[cmode].bg;g.fillRect(0,0,640,480)}
@@ -446,12 +455,12 @@ function recStop(){if(!rec)return;clearInterval(rec.iv);const r=rec.r;rec=null;t
 // LCD
 function lcd(){const d=new Date,p=n=>String(n).padStart(2,"0"),c=s=>s.padStart(Math.floor((20+s.length)/2)).padEnd(20);
  const att=mons.some(M=>M.scr===SCR&&M.attAt&&performance.now()-M.attAt<600)||(fileAtt&&performance.now()-fileAtt<600),act=alerts.filter(a=>a.exp&&a.exp>d&&a.scr===SCR&&a.m.type==="ZCZC").map(a=>a.m.evt).join(" ");
- const L=[c("§ EASyWEB V01.01"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");$("#lcd").textContent=L;$("#lcdm").textContent=L}
+ const L=[c("§ EASyWEB V01.02"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");$("#lcd").textContent=L;$("#lcdm").textContent=L}
 function fit(){const c=document.createElement("canvas").getContext("2d");c.font="100px Matrix5x8";const w=c.measureText("0").width/100||.6;["#lcd","#lcdm"].forEach(s=>{const e=$(s);if(e.clientWidth>16)e.style.fontSize=Math.min(30,(e.clientWidth-16)/(20*w))+"px"})}
 // log
 function render(){$("#log").innerHTML=alerts.filter(a=>a.scr===SCR).map(a=>{const m=a.m;return m.type==="NNNN"?`<div class="e"><b>EOM</b> <small>${esc(a.when)} / ${esc(a.src)}</small></div>`:
  `<div class="e ${a.exp>new Date?"on":""}" style="border-left-color:${SEV[a.sev]}"><b>${m.evt}</b> ${esc(evN(m))}<br>${esc(a.text)}<br><small>${esc(a.when)} / ${esc(a.src)} / Until ${fmtT(a.exp)} UTC</small>${a.rec?`<audio controls src="${a.rec}"></audio><a download="EASyWEB-${m.evt}-${a.stamp}.wav" href="${a.rec}">Save recording</a>`:a.recording?" <small>recording...</small>":""}</div>`}).join("")}
-function mk(m,src,when){const a={m,src,when,scr:SCR,stamp:new Date().toISOString().replace(/[:.]/g,"-")};if(m.type==="ZCZC"){const t=times(m);a.iss=t.iss;a.exp=t.exp;a.sev=sev(e2t(m,a));a.text=e2t(m,a)}alerts.unshift(a);render();return a}
+function mk(m,src,when){const a={m,src,when,scr:SCR,stamp:new Date().toISOString().replace(/[:.]/g,"-")};if(m.type==="ZCZC"){a.ean=m.evt==="EAN";const t=times(m);a.iss=t.iss;a.exp=t.exp;a.sev=sev(e2t(m,a));a.text=e2t(m,a)}alerts.unshift(a);render();return a}
 // multi-monitor engine: every monitor has its own source, decoder, ring buffer and recording
 function ensure(){if(ctx){ctx.resume();return}ctx=new(window.AudioContext||window.webkitAudioContext)}
 function addMon(kind,label,src,dev){ensure();
@@ -473,26 +482,61 @@ function addMon(kind,label,src,dev){ensure();
 document.addEventListener("pointerdown",()=>{if(ctx)ctx.resume();if(bgVid&&!playingA&&!holdOn){bgVid.muted=false;bgVid.play().catch(()=>{})}mons.forEach(M=>{if(M.tap&&M.el){M.tap=false;M.el.play().catch(()=>{})}})},true);
 let hlsP;function loadHls(){return hlsP||(hlsP=new Promise((res,rej)=>{if(window.Hls)return res(window.Hls);const s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.13/hls.min.js";s.onload=()=>res(window.Hls);s.onerror=()=>rej();document.head.appendChild(s)}))}
 document.addEventListener("securitypolicyviolation",e=>{if(/media|connect|default/.test(e.violatedDirective))mons.forEach(M=>{if(M.kind==="url"&&M.state!=="live"){M.blocked=true;M.state="blocked by this page's security policy: open the downloaded copy"}})});
-function rmMon(id,drop){const M=mons.find(x=>x.id===id);if(!M)return;M.dead=true;if(M.rec){if(drop)M.rec=null;else finishRec(M)}
+function rmMon(id,drop){const M=mons.find(x=>x.id===id);if(!M)return;M.dead=true;eanStop(M);if(M.rec){if(drop)M.rec=null;else finishRec(M)}
  if(M.hlsObj&&M.hlsObj.destroy)M.hlsObj.destroy();if(M.el){M.el.pause();M.el.removeAttribute("src");M.el.load()}if(M.stream)M.stream.getTracks().forEach(t=>t.stop());
  try{M.node&&M.node.disconnect();M.sp.disconnect();M.gain.disconnect()}catch(e){}M.sp.onaudioprocess=null;clearTimeout(M.attT);
  mons=mons.filter(x=>x!==M);if(selMon===M)selMon=mons.find(x=>x.kind==="url")||null;renderMons()}
 function feed(M,d){if(M.dead||(playingA&&M.kind==="mic"))return;M.total+=d.length;if(!M.heard)for(let i=0;i<d.length;i+=16)if(Math.abs(d[i])>1e-4){M.heard=true;break}
  const r0=M.rec;if(r0){r0.ch.push(d);r0.n+=d.length}
  M.ring.push(d);M.len+=d.length;M.live.push(d);M.att.push(d);while(M.len>M.fs*40)M.len-=M.ring.shift().length;
+ {const Ee=M.ean;if(Ee&&Ee.patch&&!Ee.eom&&!Ee.done&&!Ee.over)eanSched(M,Ee,d)}
  const r=M.rec;if(r&&(r.end?r.n-r.end>M.fs*1.5:r.n>M.fs*240))finishRec(M)}
-function onHdr(M,m){if(M.seen.some(s=>s.raw===m.raw&&Date.now()-s.at<3e4))return;M.seen.push({raw:m.raw,at:Date.now()});
+// Live EAN relay: decoded the moment its header is heard, then relayed in real time. The CGEN itself transmits 3 SAME headers (1 s apart), 1 s of silence and an attention tone, then patches the
+// live message audio through (starting where the incoming attention tone ended, so none of the message is lost), and finally transmits 3 EOM bursts 1 s after the message ends.
+// LCD: decoded text with an arrow, "PATCH LIVE AUDIO" while the live message plays.
+function eanPlay(E,buf,when,dest){const bf=ctx.createBuffer(1,buf.length,ctx.sampleRate);bf.getChannelData(0).set(buf);const s=ctx.createBufferSource();s.buffer=bf;s.connect(dest||E.out);s.start(when);(E.src||(E.src=[])).push(s);return s}
+function eanSched(M,E,d){const bf=ctx.createBuffer(1,d.length,M.fs);bf.getChannelData(0).set(d);const s=ctx.createBufferSource();s.buffer=bf;s.connect(E.out);const t=Math.max(E.next,ctx.currentTime+.02);s.start(t);E.next=t+d.length/M.fs;E.src.push(s)}
+function eanPatch(M){const E=M.ean;if(!E||E.done||E.patch)return;E.patch=true;gph="PATCH LIVE AUDIO";gscr=E.a.scr;lcd();
+ try{E.tg.gain.setTargetAtTime(0,ctx.currentTime,.01);E.tone.stop(ctx.currentTime+.15)}catch(e){}
+ E.next=ctx.currentTime+.05;const tot=M.total,len=M.len,st=E.att===2&&E.hitMark!=null?Math.max(tot-len,E.hitMark):tot;
+ if(st<tot){const all=new Float32Array(len);let o=0;M.ring.forEach(c=>{all.set(c,o);o+=c.length});eanSched(M,E,all.subarray(st-(tot-len)))}}
+function eanEomTx(M,E){const fs=ctx.sampleRate,b=genSame("NNNN",fs,.8),now=ctx.currentTime;let t=Math.max(E.next||0,now)+1;
+ setTimeout(()=>{if(!E.over){gph=liveTxt(E.a);gscr=E.a.scr;gsend="";lcd()}},Math.max(0,((E.next||now)-now)*1e3));
+ for(let i=0;i<3;i++){eanPlay(E,b,t);t+=b.length/fs+1}
+ setTimeout(()=>eanEnd(M,E),(t-now)*1e3+400)}
+function eanEnd(M,E){if(E.over)return;E.over=true;clearInterval(E.poll);clearTimeout(M.eanEnd);mons.forEach(x=>{x.eanMute=false;if(x.gain&&!x.dead)x.gain.gain.value=gv(x)});try{E.out.disconnect()}catch(e){}
+ if(M.ean===E)M.ean=null;if(gscr===E.a.scr&&(gph==="PATCH LIVE AUDIO"||gph===liveTxt(E.a)))gph="";endA(E.a);if(bgVid&&!playingA)bgVid.muted=muteHold();lcd()}
+function eanStop(M){const E=M.ean;if(!E)return;E.over=true;clearInterval(E.poll);clearTimeout(E.attT2);clearTimeout(M.eanEnd);(E.src||[]).forEach(s=>{try{s.stop()}catch(e){}});try{E.out.disconnect()}catch(e){}M.ean=null;mons.forEach(x=>x.eanMute=false)}
+function startEan(M,a,m){ensure();const fs=ctx.sampleRate,E={a,att:0,lastH:performance.now(),hd:m.t-m.t0,done:false,patch:false,eom:false,over:false,next:0,src:[]};
+ E.out=ctx.createGain();E.out.gain.value=Math.min(1,M.vol*mvol);E.out.connect(ctx.destination);if(rdest)E.out.connect(rdest);
+ M.ean=E;a.ean=true;a.live=true;M.org=m.org;gscr=a.scr;gsend="";gtail=null;gph=liveTxt(a);
+ mons.forEach(x=>{x.eanMute=true;if(x.gain)x.gain.gain.value=0});if(bgVid)bgVid.muted=true; // everything else is silent while the CGEN transmits; the source comes back only as the patched live audio
+ show(a);lcd();
+ const hd=genSame(m.raw,fs,.8);let t=ctx.currentTime+.05;for(let i=0;i<3;i++){eanPlay(E,hd,t);t+=hd.length/fs+1}
+ E.toneAt=t;E.tg=ctx.createGain();E.tg.connect(E.out);E.tone=eanPlay(E,genDual(fs,25,.4),t,E.tg);
+ E.poll=setInterval(()=>{if(M.ean!==E||E.done||E.over){clearInterval(E.poll);return}if(E.patch||E.eom)return;const n=ctx.currentTime;if(n<E.toneAt+8)return;if(E.att===1&&n<E.toneAt+25)return;eanPatch(M)},100);
+ M.eanEnd=setTimeout(()=>{if(M.ean===E&&!E.over){E.done=true;eanEnd(M,E)}},3e5)}
+function onHdr(M,m){const nowH=performance.now(),E0=M.ean,R0=M.rec;
+ // SAME header, attention tone, audio message, EOM: headers heard after the header phase (or once the attention tone has started) are part of the audio message and are not decoded
+ if(E0&&!E0.done){if(E0.att===0&&nowH-E0.lastH<=((E0.hd||2)+2.5)*1e3)E0.lastH=nowH;return}
+ if(R0){if(R0.att!==0||nowH-R0.lastH>((R0.hd||2)+2.5)*1e3)return;R0.lastH=nowH}
+ if(M.seen.some(s=>s.raw===m.raw&&Date.now()-s.at<3e4))return;M.seen.push({raw:m.raw,at:Date.now()});
  const a=mk(m,M.label,new Date().toLocaleTimeString());M.last=a;alarm(a.sev); // no CGEN page or crawl yet: the alert is only displayed once the SAME, attention tone, message and EOM are all decoded (finishRec)
- if(!M.rec){M.rec={ch:M.ring.slice(),n:M.len,a};a.recording=true;M.ph="RECEIVING "+m.evt;M.org=m.org;lcd()}else(M.rec.more||(M.rec.more=[])).push(a);render()}
-function onEom(M,m){if(!m.final)return;if(M.rec){clearTimeout(M.phT);setPh(M,"RECEIVING EOM");setTimeout(()=>{if(M.ph==="RECEIVING EOM"){M.ph=(M.org||"EAS")+" \u2192";lcd()}},800)}mk(m,M.label,new Date().toLocaleTimeString());if(M.rec)M.rec.end=M.rec.n;else if(M.last){const a=M.last;setTimeout(()=>endA(a),3e3)}}
+ if(m.evt==="EAN"&&!M.rec){startEan(M,a,m);render();return}
+ if(!M.rec){M.rec={ch:M.ring.slice(),n:M.len,a,lastH:performance.now(),hd:m.t-m.t0,att:0};a.recording=true;M.ph="RECEIVING "+m.evt;M.org=m.org;lcd()}else(M.rec.more||(M.rec.more=[])).push(a);render()}
+function onEom(M,m){const E=M.ean;if(E&&!E.done&&!E.eom){E.eom=true;if(!E.patch)eanPatch(M);eanEomTx(M,E)}
+ if(!m.final)return;if(E&&!E.done){E.done=true;clearTimeout(E.attT2)}
+if(M.rec){clearTimeout(M.phT);setPh(M,"RECEIVING EOM");setTimeout(()=>{if(M.ph==="RECEIVING EOM"){M.ph=(M.org||"EAS")+" \u2192";lcd()}},800)}mk(m,M.label,new Date().toLocaleTimeString());if(M.rec)M.rec.end=M.rec.n;else if(M.last&&!M.last.live){const a=M.last;setTimeout(()=>endA(a),3e3)}}
 function finishRec(M){const r=M.rec;M.rec=null;if(!r)return;clearTimeout(M.phT);M.ph="";gph="PROCESSING EAS MSG";gscr=r.a.scr;gsend="";gtail=null;lcd();r.a.recording=false;render();
  setTimeout(()=>{const inf={};r.a.rec=fxwav(r.ch,M.fs,inf);r.a.att=inf.att;r.a.snd=inf.snd;(r.more||[]).forEach(x=>{x.rec=r.a.rec;x.att=inf.att;x.snd=inf.snd;endA(x)});render();enqueuePlay(r.a,r.a.rec);(r.more||[]).forEach(x=>show(x))},30)}
 // CGEN display queue and audio playback queue: an alert's audio plays while its crawl is on screen
+// Crawl Only: the video audio returns as soon as the EOM bursts have been played, not when the crawl leaves the screen
+function relUnmute(){if(!holdOn||blackOn||!cur)return;cur.unm=true;muteOn=false;mons.forEach(M=>{if(M.noCors&&M.el)M.el.muted=!M.listen||muteHold();else if(M.gain)M.gain.gain.value=gv(M)});if(bgVid)bgVid.muted=muteHold()}
 function holdMute(){if(!muteHold())return;mons.forEach(M=>{if(M.noCors&&M.el)M.el.muted=true;else if(M.gain)M.gain.gain.value=0});if(bgVid)bgVid.muted=true}
 function holdBegin(){holdOn=true;muteOn=false;blackUntil=null;fz=null;blackOn=mode==="full";vidRes=mode!=="full"||!pauseOn;const v0=selMon&&selMon.el,v=v0&&v0.videoWidth?v0:(bgVid&&bgVid.videoWidth?bgVid:null);
  if(v&&!vidRes){try{const c=document.createElement("canvas");c.width=640;c.height=480;const x=c.getContext("2d"),r=Math.min(640/v.videoWidth,480/v.videoHeight),w=v.videoWidth*r,h=v.videoHeight*r;x.fillStyle="#000";x.fillRect(0,0,640,480);x.drawImage(v,(640-w)/2,(480-h)/2,w,h);fz=c}catch(e){}}
  if(bgVid&&!vidRes)bgVid.pause();holdMute()}
-function holdEnd(){holdOn=false;muteOn=false;fz=null;blackUntil=null;
+function holdEnd(){tuM=false;liveOn=false;holdOn=false;muteOn=false;fz=null;blackUntil=null;
  mons.forEach(M=>{if(M.noCors&&M.el){M.el.muted=!M.listen;M.el.volume=Math.min(1,M.vol*mvol)}else if(M.gain&&!playingA)M.gain.gain.value=gv(M)});
  if(bgVid){bgVid.muted=playingA;bgVid.play().catch(()=>{bgVid.muted=true;bgVid.play().catch(()=>{})})}}
 // Tune-to screen: shown before the relay (3 s, or 500 ms + audio + 500 ms when an audio file is loaded), then a blank, then the alert
@@ -506,7 +550,7 @@ function tuneRun(a,n){const aud=tuneAud,dur=aud?500+aud.dur*1000+500:3000,tb=aud
   const au=new Audio(turl||aud.url);tuneAu=au;tapEl(au);au.play().catch(()=>{})},500);
  return{end:n+dur}}
 function drawTune(m){const R=k=>65+36*k;ctrW(orgN(m),R(1));ctr("Issued "+art(evN(m)),R(3));ctrW(evN(m),R(5));ctr("Tune to Channel "+tuneCh,R(8));ctr("for Further Information",R(9))}
-function activate(a){const n=performance.now();let t0=n;const tu=tuneOn&&cgen?tuneRun(a,n):null;if(!holdOn){holdBegin();t0=n+PAGE_DELAY}else blackUntil=null;
+function activate(a){const n=performance.now();let t0=n;liveOn=!!a.live;const tu=tuneOn&&cgen&&!a.ean?tuneRun(a,n):null;if(!holdOn){holdBegin();t0=a.ean?n:n+PAGE_DELAY}else blackUntil=null;
  if(tu)t0=tu.end+TUNE_BLANK;
  cur={a,until:a.ended?n:n+6e5,t0,toneAt:t0+TONE_DELAY,tu};setTimeout(lcd,t0-n+30)}
 function show(a){if((cur&&cur.a===a)||dispQ.includes(a))return;if(cur)dispQ.push(a);else activate(a)}
@@ -514,10 +558,20 @@ function endA(a){a.ended=true;if(cur&&cur.a===a)cur.until=performance.now()}
 function enqueuePlay(a,url){playQ.push({a,url});pump()}
 function pump(){if(playingA||!playQ.length)return;const it=playQ[0];show(it.a);if(!(cur&&cur.a===it.a)){setTimeout(pump,250);return}
  if(performance.now()<cur.toneAt){setTimeout(pump,50);return}
- playQ.shift();lastPlay=it;cur.cs=performance.now()+START_DELAY;setTimeout(lcd,START_DELAY+30);playingA=true;if(muteHold()){if(bgVid)bgVid.muted=true;mons.forEach(M=>M.gain.gain.value=0)}const au=new Audio(it.url);curAu=au;tapEl(au);const iv=setInterval(()=>{if(au.paused)return;const t=au.currentTime,sn=it.a.snd,ins=q=>q&&t>=q[0]-.05&&t<=q[1]+.05;
-  if(sn){const g=ins(sn.H)?"SENDING EAS HEADER":(sn.A||[]).some(q=>ins(q))?"SENDING ATT TONE":ins(sn.E)?"SENDING EOM":"";if(g&&g!==gsend&&cur&&cur.cs!=null&&performance.now()>=cur.cs+1500){gsend=g;lcd()}}},100);
- const done=()=>{clearInterval(iv);if(!playingA||curAu!==au)return;playingA=false;curAu=null;gsend="";gph=playQ.length?"PROCESSING EAS MSG":"WAIT FOR EAS CG MSG";gscr=it.a.scr;lcd();if(bgVid)bgVid.muted=muteHold();mons.forEach(M=>{M.gain.gain.value=gv(M);if(M.kind==="mic"){M.ring=[];M.len=0}});endA(it.a);pump()};
- au.onended=done;au.onerror=done;au.play().catch(()=>{setNote("TAP PAGE FOR AUDIO");setTimeout(done,10000)})}
+ playQ.shift();lastPlay=it;cur.cs=performance.now()+START_DELAY;setTimeout(lcd,START_DELAY+30);playingA=true;if(muteHold()){if(bgVid)bgVid.muted=true;mons.forEach(M=>M.gain.gain.value=0)}pendingTap=null;const au=alertAu();try{au.pause()}catch(_){}au.src=it.url;curAu=au;tapEl(au);const iv=setInterval(()=>{if(au.paused)return;const t=au.currentTime,sn=it.a.snd,ins=q=>q&&t>=q[0]-.05&&t<=q[1]+.05;
+  if(sn&&sn.E&&t>=sn.E[1]&&cur&&cur.a===it.a&&!cur.unm)relUnmute();
+  if(sn){const g=it.a.ean?(ins(sn.M)?"PATCH LIVE AUDIO":liveTxt(it.a)):ins(sn.H)?"SENDING EAS HEADER":(sn.A||[]).some(q=>ins(q))?"SENDING ATT TONE":ins(sn.M)?"PLAY EAS AUDIO MSG":ins(sn.E)?"SENDING EOM":"";if(g&&g!==gsend&&cur&&cur.cs!=null&&performance.now()>=cur.cs+1500){gsend=g;lcd()}}},100);
+ const done=()=>{clearInterval(iv);if(!playingA||curAu!==au)return;playingA=false;curAu=null;if(cur&&cur.a===it.a&&!cur.unm)relUnmute();gsend="";gph=playQ.length?"PROCESSING EAS MSG":"WAIT FOR EAS CG MSG";gscr=it.a.scr;lcd();if(bgVid)bgVid.muted=muteHold();mons.forEach(M=>{M.gain.gain.value=gv(M);if(M.kind==="mic"){M.ring=[];M.len=0}});endA(it.a);pump()};
+ au.onended=done;au.onerror=done;
+ au.play().catch(()=>{note="TAP PAGE FOR AUDIO";lcd();const pf=()=>{if(curAu!==au)return;au.play().then(()=>{if(note==="TAP PAGE FOR AUDIO"){note="";lcd()}}).catch(()=>{})};pendingTap=pf; // autoplay blocked: the audio starts on the next tap, key press or click
+  setTimeout(()=>{if(pendingTap===pf){pendingTap=null;if(note==="TAP PAGE FOR AUDIO")note="";done()}},6e4)})}
+// Audio unlock: the first tap/click/key press resumes the audio engine and primes one shared audio element, so later alert audio is allowed to start by itself (Safari and iOS unlock per element)
+function alertAu(){return AEL||(AEL=new Audio())}
+function userGesture(){try{ensure()}catch(e){}
+ if(!aUnl&&ctx){aUnl=true;try{const b=ctx.createBuffer(1,1,22050),sn=ctx.createBufferSource();sn.buffer=b;sn.connect(ctx.destination);sn.start(0)}catch(e){}
+  if(!curAu&&!playingA){const a=alertAu();try{if(!SILU)SILU=wav([new Float32Array(2400)],48000);a.src=SILU;const p=a.play();if(p&&p.then)p.then(()=>{if(!curAu)a.pause()}).catch(()=>{aUnl=false})}catch(e){aUnl=false}}}
+ if(pendingTap){const f=pendingTap;pendingTap=null;f()}}
+["pointerdown","pointerup","touchend","mousedown","click","keydown"].forEach(ev=>addEventListener(ev,userGesture,true));
 function playQueue(){const q=queue;queue=[];q.forEach(a=>{a.rec=a.seg;enqueuePlay(a,a.seg)});render()}
 // monitor list
 const stText=M=>M.state==="live"?(M.total>M.fs*8&&!M.heard?"silent: check CORS":"live"+(M.rec?" / recording":"")):M.state;
@@ -525,7 +579,7 @@ function renderMons(){const k=SCR==="str"?"mic":"url";$("#mons").innerHTML=mons.
 function updSt(){mons.forEach(M=>{const e=document.querySelector(`[data-st="${M.id}"]`);if(e)e.textContent=stText(M)})}
 $("#mons").onclick=e=>{const b=e.target.closest("button");if(!b)return;if(b.dataset.x)rmMon(+b.dataset.x);else{selMon=mons.find(M=>M.id===+b.dataset.s);renderMons()}};
 $("#mons").onchange=e=>{const c=e.target.closest("[data-l]");if(!c)return;const M=mons.find(x=>x.id===+c.dataset.l);M.listen=c.checked;applyVol(M)};
-let mvol=1;const muteHold=()=>holdOn&&(blackOn||(muteCrawl&&muteOn)),gv=M=>M.listen&&!muteHold()?Math.min(1,M.vol*mvol):0;
+let mvol=1;const muteHold=()=>!liveOn&&holdOn&&(blackOn||tuM||(muteCrawl&&muteOn)),gv=M=>M.listen&&!muteHold()&&!M.eanMute?Math.min(1,M.vol*mvol):0;
 function applyVol(M){if(M.noCors&&M.el){M.el.muted=!M.listen||muteHold();M.el.volume=Math.min(1,M.vol*mvol)}else if(!playingA)M.gain.gain.value=gv(M)}
 $("#mons").oninput=e=>{const c=e.target.closest("[data-v]");if(!c)return;const M=mons.find(x=>x.id===+c.dataset.v);if(!M)return;M.vol=c.value/100;const l=document.querySelector(`[data-vl="${M.id}"]`);if(l)l.textContent=c.value+"%";applyVol(M)};
 $("#mv").oninput=e=>{mvol=e.target.value/100;$("#mvl").textContent=e.target.value+"%";mons.forEach(applyVol)};
@@ -637,6 +691,14 @@ const AEXT=".mp3,.wav,.m4a,.aac,.ogg,.oga,.opus,.flac,.aif,.aiff,.caf,.weba,.wma
 // Safari older than 14.1 has no promise decodeAudioData, no AudioContext sampleRate option and no Blob.arrayBuffer
 function mkAC(r){const C=window.AudioContext||window.webkitAudioContext;try{return new C({sampleRate:r})}catch(e){return new C()}}
 function decAB(ac,ab){return new Promise((res,rej)=>{try{const p=ac.decodeAudioData(ab,res,rej);if(p&&p.then)p.then(res,rej)}catch(e){rej(e)}})}
+// Decode order: SAME headers, attention tone, audio message, EOM. A header heard after the header phase is part of the audio message and is not decoded
+function gateSeq(r){const o=[];let st=0,we=0;const hasE=t=>r.some(q=>q.type==="NNNN"&&q.t>t),win=q=>q.t+2*((q.t-q.t0)+2.5);
+ r.slice().sort((a,b)=>a.t-b.t).forEach(q=>{
+  if(q.type==="NNNN"){o.push(q);st=0;return}
+  if(st===0){o.push(q);st=1;we=win(q);return}
+  if(st===1&&q.t0<=we){o.push(q);return}
+  if(!hasE(q.t)){o.push(q);st=1;we=win(q)} // no EOM anywhere after it, so it cannot be inside a message
+ });return o}
 function rdAB(f){return f.arrayBuffer?f.arrayBuffer():new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsArrayBuffer(f)})}
 // Import Audio: offline decode of a file
 $("#ba").onclick=()=>$("#fia").click();
@@ -644,8 +706,9 @@ $("#fia").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)r
  try{const ac=mkAC(22050),buf=await decAB(ac,await rdAB(f));try{ac.close()}catch(_){}
   const x=new Float32Array(buf.length);for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/buf.numberOfChannels}
   const res=[],dd=new SameDec(buf.sampleRate,m=>{if(!res.some(p=>p.raw===m.raw&&Math.abs(p.t-m.t)<30))res.push(m)},m=>{if(m.final)res.push(m)});for(let i=0;i<x.length;i+=16384)dd.push(x.subarray(i,i+16384));
+  res.splice(0,res.length,...gateSeq(res));
   if(!res.length)return setNote("NO SAME FOUND");
-  note="";{const z=res.find(m=>m.type==="ZCZC");gscr=SCR;gsend="";gtail=null;for(const t of ["RECEIVING "+(z?z.evt:"EAS"),"RECEIVING ATT TONE","RECORDING AUDIO MSG","RECEIVING EOM"]){gph=t;lcd();await new Promise(r=>setTimeout(r,900))}}queue=[];const fs=buf.sampleRate;res.forEach(m=>{const a=mk(m,f.name,"at "+m.t.toFixed(1)+" s");if(m.type==="ZCZC"){const s=Math.max(0,m.t0-1),n=res.find(r=>r.type==="NNNN"&&r.t>m.t),e=Math.min(x.length/fs,n?n.t+1.5:m.t+60);const inf={};a.seg=fxwav([x.slice(Math.floor(s*fs),Math.floor(e*fs))],fs,inf);a.att=inf.att;a.snd=inf.snd;queue.push(a)}});gph="PROCESSING EAS MSG";gscr=SCR;gsend="";gtail=null;lcd();render();playQueue()}
+  note="";{const z=res.find(m=>m.type==="ZCZC");gscr=SCR;gsend="";gtail=null;for(const t of (z&&z.evt==="EAN"?[]:["RECEIVING "+(z?z.evt:"EAS"),"RECEIVING ATT TONE","RECORDING AUDIO MSG","RECEIVING EOM"])){gph=t;lcd();await new Promise(r=>setTimeout(r,900))}}queue=[];const fs=buf.sampleRate;res.forEach(m=>{const a=mk(m,f.name,"at "+m.t.toFixed(1)+" s");if(m.type==="ZCZC"){const s=Math.max(0,m.t0-1),n=res.find(r=>r.type==="NNNN"&&r.t>m.t),e=Math.min(x.length/fs,n?n.t+1.5:m.t+60);const inf={};a.seg=fxwav([x.slice(Math.floor(s*fs),Math.floor(e*fs))],fs,inf);a.att=inf.att;a.snd=inf.snd;queue.push(a)}});gph="PROCESSING EAS MSG";gscr=SCR;gsend="";gtail=null;lcd();render();playQueue()}
  catch(err){setNote("BAD AUDIO FILE")}};
 const resSel=$("#res"),stg=document.querySelector(".stage");
 function syncRes(){const v=RW+"x"+RH,o=[...resSel.options].some(x=>x.value===v);resSel.value=o?v:"custom";$("#cw").value=RW;$("#ch").value=RH;$("#cres").hidden=o}
