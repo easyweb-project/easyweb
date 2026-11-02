@@ -18,3 +18,7 @@ EASyPLUS and Trilithic are owned by VIAVI, Inc. We do not claim to own the trade
 
 ## AI usage disclaimer:
 Generative AI (Claude) has been fully used in this project's code. However, the idea, the imagery, the fonts, the documentation, etc. was all done by humans. Yes, we are lazy (maybe).
+
+## Release notes
+v1.00 - initial release
+v1.01 - fixes a bug where you cannot upload audio and fixes the 24 fps glitch.
