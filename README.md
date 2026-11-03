@@ -23,3 +23,4 @@ Generative AI (Claude) has been fully used in this project's code. However, the 
 v1.00 - initial release
 v1.01 - fixes a bug where you cannot upload audio and fixes the 24 fps glitch.
 v1.02 - accurately decodes EANs, fixes tune-to screen and alert crawl
+v1.03 - added a clear EAS log button and call-sign override
