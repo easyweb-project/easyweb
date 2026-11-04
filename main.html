@@ -116,6 +116,9 @@ The fans for enjoying!</p>
 <div id="shl" style="font-size:13px;color:#aaa;margin:-4px 0 8px;overflow-wrap:anywhere"></div>
 <div class="row"><input type="text" id="csg" maxlength="8" spellcheck="false" autocomplete="off" placeholder="Callsign override (8 characters max)" aria-label="Callsign override for decoded and encoded alerts"></div>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="mbl"> Motion blur</label><input type="range" id="mbs" min="1" max="10" value="5" aria-label="Motion blur strength"></div>
+<div class="row"><label for="lsm" style="white-space:nowrap" title="Horizontal luma lowpass from ntsc-rs (luma_smear). Bright edges trail off to the right. 0 = off.">Luma smear</label><input type="range" id="lsm" min="0" max="100" value="0" aria-label="Luma smear amount, 0 is off"><span id="lsl" style="min-width:2.6em;text-align:right">0.00</span></div>
+<div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Odd scanlines are drawn first, then the even ones 1/60 s later, as on an interlaced 525-line (480i) display. Motion shows combing."><input type="checkbox" id="ilc"> Interlace (525 lines)</label></div>
+<div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer" title="Needs Interlace. Yadif 2x (as in OBS): every field is kept and the missing lines are rebuilt edge-directed and limited by the neighbouring fields, so still areas stay sharp and motion shows no combing. Adds one field (~17 ms) of delay. Needs WebGL2."><input type="checkbox" id="ild" disabled> Deinterlace (Yadif 2x)</label></div>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="mbv"> Also blur imported image/video</label></div>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="mco" checked=""> Mute video during alert (Crawl Only)</label></div>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="pvo" checked=""> Pause video 3 s on alert (Full Page)</label></div>
@@ -413,6 +416,8 @@ function setRes(w,h){
  normalRH=Math.max(240,Math.min(4096,Math.round(h)||1080));
  RH=widescreenMode?Math.max(240,Math.round(RW*9/16)):normalRH;
  cv.width=RW;cv.height=RH;cv.style.width=RW+"px";cv.style.aspectRatio=RW+" / "+RH;
+ // Use the browser's highest-quality canvas resampling (bicubic-style) for scaled media.
+ mainG.imageSmoothingEnabled=true;mainG.imageSmoothingQuality="high";
  try{localStorage.setItem("easyweb-res",RW+"x"+normalRH)}catch(e){}
 }
 // scroll position 1-11 (7 = middle); row = n-2 on the 36 px grid, so the old presets were Top=3, Middle=7, Bottom=10
@@ -427,6 +432,186 @@ const MAXC=26;
 function wrapW(s,n){const out=[];let line="";for(let w of String(s).split(/\s+/)){if(!w)continue;while(w.length>n){if(line){out.push(line);line=""}out.push(w.slice(0,n));w=w.slice(n)}if(!line)line=w;else if((line+" "+w).length<=n)line+=" "+w;else{out.push(line);line=w}}if(line)out.push(line);return out.length?out:[""]}
 function ctrW(s,y){const L=String(s).split("\n").flatMap(x=>wrapW(x,MAXC));L.forEach((t,i)=>ctr(t,y+36*i));return L.length}
 let rafP=false;function raf(t){rafP=false;frame(t)}
+// Interlace: the picture is scanned as IL=525 lines (the NTSC line count) spread over the whole picture height, split into two fields (even lines
+// 0,2,4... and odd lines 1,3,5...). Each field is a fresh snapshot taken ~1/59.94 s after the previous one; the other field's lines keep showing the
+// older snapshot (a "weave"), so anything that moves (the crawl, video) shows the classic combing artifact on its edges. 525 is odd, so one field
+// has 263 lines and the other 262, as on a real set.
+const IL=525;
+let ilDe=false,ilOn=false,ilv=null,ilx=null,ilm=[null,null],ilKey="",ilPar=0,ilNext=0,ilFresh=true;const FIELD_MS=1000/59.94;
+// Deinterlace: Yadif 2x (port of OBS's deinterlace_yadif_2x.effect, mode 0, run on the GPU with WebGL2). One output frame per field, so 59.94 fps.
+// Every field is kept as-is; the missing lines are rebuilt from the kept field's lines above/below (edge-directed spatial guess) and clamped to
+// what the same lines did in the fields before and after (temporal average +- the temporal/spatial difference), exactly as in Yadif.
+// Three woven frames are kept (W_t, W_t-1, W_t-2). "image" = W_t, "previous_image" = W_t-2, and the field kept for display is the one before the
+// newest (F_t-1), so both neighbours of the rebuilt lines are known: this costs one field (~16.7 ms) of delay, like Yadif in OBS/ffmpeg.
+let yg=null,yc=null,yPW=null,yPY=null,yU={},yS=null,yR=[],yKey=0,yFresh=true,yPar=1,yNext=0,yBad=false,ypc=null,ypx=null;
+const Y_VS="#version 300 es\nvoid main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));gl_Position=vec4(p*2.-1.,0.,1.);}";
+// pass 1: weave. Line y of the new field is sampled from the picture (two taps across the line's height), the other lines come from the last woven frame
+const Y_WEAVE=`#version 300 es
+precision highp float;precision highp int;
+uniform sampler2D uS;uniform sampler2D uW;uniform int uPar;uniform vec2 uSrc;uniform vec2 uMap;
+out vec4 o;
+void main(){
+ ivec2 t=ivec2(gl_FragCoord.xy);
+ if(uPar>=0&&(t.y&1)!=uPar){o=texelFetch(uW,t,0);return;}
+ float yc=uMap.x+(float(t.y)+.5)*uMap.y,u=(float(t.x)+.5)/uSrc.x,dv=.25*uMap.y;
+ o=.5*(texture(uS,vec2(u,(yc-dv)/uSrc.y))+texture(uS,vec2(u,(yc+dv)/uSrc.y)));o.a=1.;
+}`;
+// pass 2: Yadif mode 0. Same maths as the effect file; differences: values are compared in 0..1 so the "-1" start bias of the spatial score is
+// 1/255 (1 level) as in ffmpeg, and the direction used for the guess is the one that was scored (below x+L with above x-L).
+const Y_YADIF=`#version 300 es
+precision highp float;precision highp int;
+uniform sampler2D uImg;uniform sampler2D uPrev;uniform ivec2 uDim;uniform int uKeep;
+out vec4 o;
+const float BIAS=1./255.;
+ivec2 fx(ivec2 t){t.x=clamp(t.x,0,uDim.x-1);if(t.y<0)t.y=-t.y;else if(t.y>=uDim.y)t.y=2*(uDim.y-1)-t.y;return t;}
+vec3 I(ivec2 t,int x,int y){return texelFetch(uImg,fx(t+ivec2(x,y)),0).rgb;}
+vec3 P(ivec2 t,int x,int y){return texelFetch(uPrev,fx(t+ivec2(x,y)),0).rgb;}
+vec3 AV(ivec2 t,int x,int y){return .5*(I(t,x,y)+P(t,x,y));}
+vec3 SC(ivec2 t,int L){return abs(I(t,-1+L,1)-I(t,-1-L,-1))+abs(I(t,L,1)-I(t,-L,-1))+abs(I(t,1+L,1)-I(t,1-L,-1));}
+vec3 PR(ivec2 t,int L){return .5*(I(t,L,1)+I(t,-L,-1));}
+void main(){
+ ivec2 t=ivec2(int(gl_FragCoord.x),uDim.y-1-int(gl_FragCoord.y));
+ if((t.y&1)==uKeep){o=vec4(I(t,0,0),1.);return;}
+ vec3 c=I(t,0,1),d=AV(t,0,0),e=I(t,0,-1);
+ vec3 td0=abs(P(t,0,0)-I(t,0,0))*.5,td1=(abs(P(t,0,1)-c)+abs(P(t,0,-1)-e))*.5;
+ vec3 diff=max(td0,td1); // temporal_diff2 needs the next frame, which does not exist (always 0 in the effect too)
+ vec3 sp=(c+e)*.5,ss=abs(I(t,-1,1)-I(t,-1,-1))+abs(c-e)+abs(I(t,1,1)-I(t,1,-1))-BIAS;
+ for(int s=-1;s<=1;s+=2){
+  vec3 sc=SC(t,s),w=vec3(lessThan(sc,ss));
+  ss=mix(ss,sc,w);sp=mix(sp,PR(t,s),w);
+  vec3 sc2=SC(t,2*s),w2=vec3(lessThan(sc2,ss))*w;
+  ss=mix(ss,sc2,w2);sp=mix(sp,PR(t,2*s),w2);
+ }
+ vec3 b=AV(t,0,2),f=AV(t,0,-2);
+ vec3 mx=max(d-e,max(d-c,min(b-c,f-e))),mn=min(d-e,min(d-c,max(b-c,f-e)));
+ diff=max(diff,max(mn,-mx));
+ o=vec4(clamp(sp,d-diff,d+diff),1.);
+}`;
+function yProg(gl,fs){const mk=(k,s)=>{const h=gl.createShader(k);gl.shaderSource(h,s);gl.compileShader(h);if(!gl.getShaderParameter(h,gl.COMPILE_STATUS))throw new Error(gl.getShaderInfoLog(h));return h};
+ const p=gl.createProgram();gl.attachShader(p,mk(gl.VERTEX_SHADER,Y_VS));gl.attachShader(p,mk(gl.FRAGMENT_SHADER,fs));gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p}
+function yTex(gl,w,h,lin){const t=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,t);if(w)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
+ const f=lin?gl.LINEAR:gl.NEAREST;gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,f);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,f);
+ gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);return t}
+function yInit(W){
+ if(yBad)return false;
+ try{
+  if(!yg){
+   yc=document.createElement("canvas");yc.width=W;yc.height=IL;
+   yg=yc.getContext("webgl2",{alpha:false,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false});
+   if(!yg)throw new Error("no webgl2");
+   yc.addEventListener("webglcontextlost",e=>{e.preventDefault();yg=null;yKey=0},false);
+   const gl=yg;yPW=yProg(gl,Y_WEAVE);yPY=yProg(gl,Y_YADIF);
+   for(const [p,names] of [[yPW,["uS","uW","uPar","uSrc","uMap"]],[yPY,["uImg","uPrev","uDim","uKeep"]]])for(const n of names)yU[n]=gl.getUniformLocation(p,n);
+   gl.bindVertexArray(gl.createVertexArray());gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);
+   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,false);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,false);gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,gl.NONE);
+   yS=yTex(gl,0,0,true);yKey=0;
+  }
+  const gl=yg;
+  if(yKey!==W){
+   yc.width=W;yc.height=IL;for(const r of yR){gl.deleteTexture(r.t);gl.deleteFramebuffer(r.f)}
+   yR=[0,1,2].map(()=>{const t=yTex(gl,W,IL,false),f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);return{t,f}});
+   gl.bindFramebuffer(gl.FRAMEBUFFER,null);yKey=W;yFresh=true;
+   ypc=document.createElement("canvas");ypc.width=W;ypc.height=IL;ypx=ypc.getContext("2d");
+  }
+  return true;
+ }catch(err){console.warn("Yadif unavailable:",err);yBad=true;return false}
+}
+function yadif(now){
+ const W=RW;if(!yInit(W))return false;
+ const gl=yg,K=Math.min(RW/640,RH/480),KY=widescreenMode?RH/480:K,oy=(RH-480*KY)/2,PH=480*KY;
+ if(yFresh||now>=yNext-3){
+  let kp=0,par=-1;
+  if(yFresh){yFresh=false;yNext=now+FIELD_MS;yPar=1}
+  else{yNext=now-yNext>50?now+FIELD_MS:yNext+FIELD_MS;par=yPar;yPar^=1;kp=1-par}
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,yS);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,cv);
+  gl.useProgram(yPW);gl.uniform1i(yU.uS,0);gl.uniform1i(yU.uW,1);gl.uniform2f(yU.uSrc,RW,RH);gl.uniform2f(yU.uMap,oy,PH/IL);gl.viewport(0,0,W,IL);
+  const wv=(dst,prev,p)=>{gl.bindFramebuffer(gl.FRAMEBUFFER,dst.f);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,prev);gl.uniform1i(yU.uPar,p);gl.drawArrays(gl.TRIANGLES,0,3)};
+  if(par<0){for(const r of yR)wv(r,yS,-1)} // first field: every line from the picture, nothing to comb yet
+  else{const nw=yR[2];wv(nw,yR[0].t,par);yR=[nw,yR[0],yR[1]]} // W_t built from W_t-1; ring is now [W_t, W_t-1, W_t-2]
+  gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,W,IL);gl.useProgram(yPY);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,yR[0].t);gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,yR[2].t);
+  gl.uniform1i(yU.uImg,0);gl.uniform1i(yU.uPrev,1);gl.uniform2i(yU.uDim,W,IL);gl.uniform1i(yU.uKeep,kp);gl.drawArrays(gl.TRIANGLES,0,3);
+  ypx.globalCompositeOperation="copy";ypx.drawImage(yc,0,0);ypx.globalCompositeOperation="source-over"; // keep the result, the main canvas is redrawn every frame
+ }
+ const c=mainG;c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;c.globalCompositeOperation="source-over";c.imageSmoothingEnabled=PH<IL;c.drawImage(ypc,0,0,W,IL,0,oy,W,PH);c.imageSmoothingEnabled=true; // whole-pixel scanlines when the screen has at least 525 rows; otherwise (640x480) they have to be filtered down
+ return true}
+function interlace(now){
+ if(ilDe){if(yadif(now))return;ilDe=false;ilFresh=true;const d=$("#ild");d.checked=false;setNote("YADIF NEEDS WEBGL2")}
+ const K=Math.min(RW/640,RH/480),KY=widescreenMode?RH/480:K,oy=(RH-480*KY)/2,key=RW+"x"+RH+"/"+KY+"/"+oy,c=mainG;
+ if(!ilv||ilv.width!==RW||ilv.height!==RH){ilv=document.createElement("canvas");ilv.width=RW;ilv.height=RH;ilx=ilv.getContext("2d");ilFresh=true;ilKey=""}
+ if(ilKey!==key){ilKey=key;const pt=480*KY/IL,ry=i=>Math.max(0,Math.min(RH,Math.round(oy+i*pt)));
+  ilm=[0,1].map(p=>{const m=document.createElement("canvas");m.width=RW;m.height=RH;const x=m.getContext("2d");x.fillStyle="#fff";for(let i=p;i<IL;i+=2){const a=ry(i),b=ry(i+1);if(b>a)x.fillRect(0,a,RW,b-a)}return m})} // one mask per field: white strips over that field's scanlines (snapped to whole pixel rows, so the two fields never overlap or leave gaps)
+ c.setTransform(1,0,0,1,0,0);c.globalAlpha=1;
+ if(ilFresh){ilFresh=false;ilNext=now+FIELD_MS;ilPar=1;ilx.globalCompositeOperation="copy";ilx.drawImage(cv,0,0);ilx.globalCompositeOperation="source-over"}
+ else if(now>=ilNext-3){ // a new field is due (this also holds the field rate at ~60 Hz on 120/144 Hz displays)
+  ilNext=now-ilNext>50?now+FIELD_MS:ilNext+FIELD_MS;const p=ilPar;ilPar^=1;
+  c.globalCompositeOperation="destination-in";c.drawImage(ilm[p],0,0);c.globalCompositeOperation="source-over"; // keep only this field's lines of the new frame
+  ilx.globalCompositeOperation="destination-out";ilx.drawImage(ilm[p],0,0); // clear the same lines in the previous picture
+  ilx.globalCompositeOperation="lighter";ilx.drawImage(cv,0,0);ilx.globalCompositeOperation="source-over"; // weave the new field in
+ }
+ c.globalCompositeOperation="copy";c.drawImage(ilv,0,0);c.globalCompositeOperation="source-over"}
+// Luma smear: port of ntsc-rs's EffectCtx::luma_smear. A single-pole IIR lowpass (make_lowpass: y[n] = a*x[n] + (1-a)*y[n-1], zero initial condition) runs
+// along every row of the luma plane only, so bright edges trail off to the right and the left edge fades in from black. As in ntsc.rs the cutoff is
+// 0.25 * 2^(-4*amount) cycles per sample and the sample period is 1/horizontal_scale; here horizontal_scale = canvas pixels per pixel of the 640-wide raster
+// (ntsc-rs uses height/480), so the smear looks the same at any resolution. An IIR is sequential along a row, so the GPU sums its exact impulse response
+// instead: y[n] = a * sum_k r^k x[n-k] with r = 1-a, built in log2 passes (S_j+1[n] = S_j[n] + r^(2^j) * S_j[n-2^j]) on half-float targets. Only luma changes:
+// adding the same delta to R, G and B moves Y and leaves I and Q alone. It only touches CGEN: with an imported image/video showing, CGEN is drawn on its
+// own transparent layer (premultiplied luma and coverage are smeared together, so text can trail over the picture) and the media underneath stays sharp.
+// Without media the whole canvas is CGEN and is smeared as it stands. Runs before interlace/Yadif.
+let lsAmt=0,lsc=null,lsg=null,lsP={},lsU={},lsT=[],lsS=null,lsKey="";
+const LS_HEAD="#version 300 es\nprecision highp float;precision highp int;\nout vec4 o;\n",LS_Y="float Y(vec3 c){return dot(c,vec3(.299,.587,.114));}\n";
+const LS_FIRST=LS_HEAD+LS_Y+`uniform sampler2D uS;uniform float uW;
+vec2 L(ivec2 t){vec4 c=texelFetch(uS,t,0);return vec2(Y(c.rgb),c.a);}
+void main(){ivec2 t=ivec2(gl_FragCoord.xy);vec2 y=L(t);if(t.x>=1)y+=uW*L(t-ivec2(1,0));o=vec4(y,0.,1.);}`;
+const LS_STEP=LS_HEAD+`uniform sampler2D uT;uniform int uD;uniform float uW;
+void main(){ivec2 t=ivec2(gl_FragCoord.xy);vec2 y=texelFetch(uT,t,0).rg;if(t.x>=uD)y+=uW*texelFetch(uT,t-ivec2(uD,0),0).rg;o=vec4(y,0.,1.);}`;
+const LS_FINAL=LS_HEAD+LS_Y+`uniform sampler2D uS;uniform sampler2D uT;uniform float uA;
+void main(){ivec2 t=ivec2(gl_FragCoord.xy);vec4 c=texelFetch(uS,t,0);vec2 s=uA*texelFetch(uT,t,0).rg;float a=max(c.a,s.y);o=vec4(clamp(c.rgb+(s.x-Y(c.rgb)),0.,a),a);}`;
+function lsFail(err){console.warn("Luma smear unavailable:",err);lsg=null;lsc=null;lsKey="";lsAmt=0;const e=$("#lsm");if(e)e.value=0;const l=$("#lsl");if(l)l.textContent="0.00";setNote("LUMA SMEAR NEEDS WEBGL2")}
+function lsInit(){
+ try{
+  if(!lsg){
+   lsc=document.createElement("canvas");lsc.width=RW;lsc.height=RH;
+   const gl=lsc.getContext("webgl2",{alpha:true,antialias:false,depth:false,stencil:false,preserveDrawingBuffer:false});
+   if(!gl||!(gl.getExtension("EXT_color_buffer_float")||gl.getExtension("EXT_color_buffer_half_float")))throw new Error("WebGL2 with float render targets is needed");
+   lsc.addEventListener("webglcontextlost",e=>{e.preventDefault();lsg=null;lsKey=""},false);
+   const ul=(pr,...n)=>Object.fromEntries(n.map(k=>[k,gl.getUniformLocation(pr,k)]));
+   lsP={f:yProg(gl,LS_FIRST),s:yProg(gl,LS_STEP),o:yProg(gl,LS_FINAL)};
+   lsU={f:ul(lsP.f,"uS","uW"),s:ul(lsP.s,"uT","uD","uW"),o:ul(lsP.o,"uS","uT","uA")};
+   gl.bindVertexArray(gl.createVertexArray());gl.disable(gl.BLEND);gl.disable(gl.DEPTH_TEST);
+   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL,true);gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL,true);gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL,gl.NONE);
+   lsS=yTex(gl,0,0,false);lsT=[];lsg=gl;lsKey="";
+  }
+  const gl=lsg,key=RW+"x"+RH;
+  if(lsKey!==key){
+   lsc.width=RW;lsc.height=RH;for(const r of lsT){gl.deleteTexture(r.t);gl.deleteFramebuffer(r.f)}
+   lsT=[0,1].map(()=>{const t=yTex(gl,0,0,false);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA16F,RW,RH,0,gl.RGBA,gl.HALF_FLOAT,null);
+    const f=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,f);gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,t,0);
+    if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw new Error("half-float render target not supported");return{t,f}});
+   gl.bindFramebuffer(gl.FRAMEBUFFER,null);lsKey=key;
+  }
+  return true;
+ }catch(err){lsFail(err);return false}
+}
+function lumaSmear(src,dst){
+ if(!lsInit())return;
+ try{
+  const gl=lsg,KX=widescreenMode?RW/640:Math.min(RW/640,RH/480),
+   cut=Math.pow(2,-4*lsAmt)*.25,dt=1/KX,tau=1/(2*Math.PI*cut),al=dt/(tau+dt),r=1-al,
+   J=Math.max(1,Math.min(11,Math.ceil(Math.log2(Math.max(2,Math.log(.002)/Math.log(r)))))); // 2^J taps: whatever is cut off is under 0.2 % of full scale
+  gl.viewport(0,0,RW,RH);
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,null);
+  gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,lsS);gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,src);
+  gl.bindFramebuffer(gl.FRAMEBUFFER,lsT[0].f);gl.useProgram(lsP.f);gl.uniform1i(lsU.f.uS,0);gl.uniform1f(lsU.f.uW,r);gl.drawArrays(gl.TRIANGLES,0,3); // luma + one tap (2 taps)
+  let c=0;gl.useProgram(lsP.s);gl.uniform1i(lsU.s.uT,1);
+  for(let j=1;j<J;j++){ // each pass doubles the number of taps
+   gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,lsT[c].t);gl.bindFramebuffer(gl.FRAMEBUFFER,lsT[c^1].f);
+   gl.uniform1i(lsU.s.uD,1<<j);gl.uniform1f(lsU.s.uW,Math.pow(r,1<<j));gl.drawArrays(gl.TRIANGLES,0,3);c^=1}
+  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,lsT[c].t);gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+  gl.useProgram(lsP.o);gl.uniform1i(lsU.o.uS,0);gl.uniform1i(lsU.o.uT,1);gl.uniform1f(lsU.o.uA,al);gl.drawArrays(gl.TRIANGLES,0,3); // original RGB + (smeared Y - original Y)
+  dst.setTransform(1,0,0,1,0,0);dst.globalAlpha=1;dst.globalCompositeOperation="copy";dst.drawImage(lsc,0,0);dst.globalCompositeOperation="source-over";
+ }catch(err){lsFail(err)}
+}
 function frame(now){g.setTransform(1,0,0,1,0,0);g.fillStyle="#000";g.fillRect(0,0,RW,RH);const K=Math.min(RW/640,RH/480),KX=widescreenMode?RW/640:K,KY=widescreenMode?RH/480:K;g.setTransform(KX,0,0,KY,(RW-640*KX)/2,(RH-480*KY)/2);if(!cur&&dispQ.length)activate(dispQ.shift());
  if(!cgen&&cur&&cur.endAt==null&&now>cur.until)cur=null;
  if(holdOn){if(cur||dispQ.length||playQ.length||playingA)blackUntil=null;else if(!blackOn)holdEnd();else if(blackUntil==null)blackUntil=now+BLACK_HOLD;else if(now>=blackUntil)holdEnd()}
@@ -445,8 +630,8 @@ function frame(now){g.setTransform(1,0,0,1,0,0);g.fillStyle="#000";g.fillRect(0,
   if(fillMedia)g.drawImage(bgImg,0,0,640,480);
   else{const r=Math.min(640/bgImg.naturalWidth,480/bgImg.naturalHeight),w=bgImg.naturalWidth*r,h=bgImg.naturalHeight*r;g.drawImage(bgImg,(640-w)/2,(480-h)/2,w,h)}
  }else if(cgen&&!(cur&&mode!=="full"&&!crawlBg)){g.fillStyle=CM[cmode].bg;g.fillRect(0,0,640,480)}
- const sp=blurOn&&!blurBg&&!blk&&!!(vd||bgImg); // motion blur leaves the imported image/video sharp unless "Also blur imported image/video" is ticked
- if(sp){if(!lcv||lcv.width!==cv.width||lcv.height!==cv.height){lcv=document.createElement("canvas");lcv.width=cv.width;lcv.height=cv.height;lcx=lcv.getContext("2d")}lcx.setTransform(1,0,0,1,0,0);lcx.globalAlpha=1;lcx.clearRect(0,0,lcv.width,lcv.height);lcx.setTransform(KX,0,0,KY,(RW-640*KX)/2,(RH-480*KY)/2);g=lcx}
+ const sp=blurOn&&!blurBg&&!blk&&!!(vd||bgImg),lsl=lsAmt>0&&!blk&&!!(vd||bgImg),lay=sp||lsl; // motion blur leaves the imported image/video sharp unless "Also blur imported image/video" is ticked
+ if(lay){if(!lcv||lcv.width!==cv.width||lcv.height!==cv.height){lcv=document.createElement("canvas");lcv.width=cv.width;lcv.height=cv.height;lcx=lcv.getContext("2d");lcx.imageSmoothingEnabled=true;lcx.imageSmoothingQuality="high"}lcx.setTransform(1,0,0,1,0,0);lcx.globalAlpha=1;lcx.clearRect(0,0,lcv.width,lcv.height);lcx.setTransform(KX,0,0,KY,(RW-640*KX)/2,(RH-480*KY)/2);g=lcx}
  if(cgen&&tun)drawTune(cur.a.m);
  if(cgen&&!blk){
   if(cur&&now>=cur.t0){const m=cur.a.m,full=mode==="full",R=k=>65+36*k,L=spLayout(full);if(full&&spos>=10){const q=spLayout(true,3);L.org=q.org;L.is=q.is;L.ev=q.ev;if(spos===10){const en=String(evN(m)).split("\n").flatMap(x=>wrapW(x,MAXC)).length;L.ev=Math.min(L.ev,L.sc-en)}} // position 10: the crawl sits right under the event, so an event that wraps to a second line moves up a line instead of overlapping it // positions 10-11: page text stays where position 3 puts it, only the crawl moves
@@ -464,10 +649,13 @@ function frame(now){g.setTransform(1,0,0,1,0,0);g.fillStyle="#000";g.fillRect(0,
    if(cur&&cur.wait==null&&cur.endAt==null&&cur.cs!=null&&now>=cur.cs){g.save();g.beginPath();g.rect(71,0,504,480);g.clip();tx(s,Math.round((575-cur.pos)*K)/K,R(L.sc),true);g.restore()}}
   else if(align){g.fillStyle=CM[cmode].bg;g.fillRect(0,0,640,480);if(now>=alBlank){ctr("Please Wait a Moment",204);ctr("Alignment in Process",276)}} // blank for 500 ms when the alignment screen is switched on
   else if(!bgImg&&!vd){const cmb=mode==="full"&&now<cmBlank;g.fillStyle=cmb?blankC():CM[cmode].bg;g.fillRect(0,0,640,480);if(cmb||now<custBlank){}else if(cust)drawCust(now);else tx("EAS DETAILS CHANNEL",121,122,true)}}
+ if(lay){g=mainG;if(lsl)lumaSmear(lcv,lcx);if(!sp){g.setTransform(1,0,0,1,0,0);g.globalAlpha=1;g.drawImage(lcv,0,0)}} // smear the CGEN layer only; without motion blur on the layer, put it over the media as is
  if(sp){g=mainG;const rr=blurTau/15*.35*K,NT=7;g.setTransform(1,0,0,1,0,0);for(let i=0;i<NT;i++){g.globalAlpha=1/(i+1);g.drawImage(lcv,(i/(NT-1)*2-1)*rr,0)}g.globalAlpha=1}
  else if(blurOn){if(!tc||tc.width!==cv.width||tc.height!==cv.height){tc=document.createElement("canvas");tc.width=cv.width;tc.height=cv.height;tcx=tc.getContext("2d")}
   // one uniform spatial smear for all CGEN content (static and crawl alike); no temporal blend, so the crawl isn't blurred twice
   {const rr=blurTau/15*.35*K,NT=7;tcx.setTransform(1,0,0,1,0,0);tcx.globalAlpha=1;tcx.clearRect(0,0,tc.width,tc.height);tcx.drawImage(cv,0,0);g.setTransform(1,0,0,1,0,0);for(let i=0;i<NT;i++){g.globalAlpha=1/(i+1);g.drawImage(tc,(i/(NT-1)*2-1)*rr,0)}g.globalAlpha=1}}
+ if(lsAmt>0&&!lsl)lumaSmear(cv,mainG); // no media showing: the whole canvas is CGEN. After the motion blur, before interlace/Yadif so they work on the smeared picture
+ if(ilOn)interlace(now); // interlace goes after the blur and before the outline, so the outline stays solid
  // white outline: drawn after the motion blur so it stays sharp, and left out while recording so it is not in the saved video
  if(!rec&&!recHide){g.save();g.globalAlpha=1;g.setTransform(KX,0,0,KY,(RW-640*KX)/2,(RH-480*KY)/2);g.strokeStyle="#fff";g.lineWidth=2/Math.min(KX,KY);g.strokeRect(1/K,1/K,640-2/K,480-2/K);g.restore()}
  if(lastCur&&!cur&&!dispQ.length&&!playQ.length&&!playingA){if(autoRecOn)setTimeout(()=>{if(autoRecOn&&rec&&!cur&&!playingA&&!dispQ.length&&!playQ.length)recStop()},1500);gtail={org:orgOf(lastCur.a),txt:lastCur.a.text||"",scr:lastCur.a.scr,until:performance.now()+5000};gph="";gscr=gtail.scr;lcd();setTimeout(lcd,5100)}lastCur=cur;
@@ -498,7 +686,7 @@ function recStop(){if(!rec)return;autoRecOn=false;clearInterval(rec.iv);const r=
 // LCD
 function lcd(){const d=new Date,p=n=>String(n).padStart(2,"0"),c=s=>s.padStart(Math.floor((20+s.length)/2)).padEnd(20);
  const att=mons.some(M=>M.scr===SCR&&M.attAt&&performance.now()-M.attAt<600)||(fileAtt&&performance.now()-fileAtt<600),act=alerts.filter(a=>a.exp&&a.exp>d&&a.scr===SCR&&a.m.type==="ZCZC").map(a=>a.m.evt).join(" ");
- const L=[c("§ EASyWEB V01.11"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");lcdPut(L)}
+ const L=[c("§ EASyWEB V01.20"),c(`${p(d.getMonth()+1)}/${p(d.getDate())}/${p(d.getFullYear()%100)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`).toUpperCase(),c(note||lcdStatus()||(act?"ACTIVE: "+act:"")).slice(0,20).toUpperCase(),(SCR==="menu"?c("SELECT A MODE"):(SCR==="imp"?"ACTIVE MONITOR: FILE":"ACTIVE MONITORS: "+mons.length)).slice(0,20).toUpperCase()].join("\n");lcdPut(L)}
 // LCD: the sprite is a 845x286 20x4 matrix (6 px dots, 7 px pitch, 40 px per character, 60 px per line, 8 dot rows per cell; the font's 7 dot rows fill the top 7 rows of each cell).
 // Matrix5x8 at 49 px makes one font dot pitch = 7 px; every character is placed on its own cell origin so the glyph dots land on the sprite dots.
 const LCD_X0=24.51,LCD_Y0=73.49;
@@ -655,8 +843,11 @@ $("#pvo").onchange=e=>{pauseOn=e.target.checked};
 $("#rec").onclick=()=>rec?recStop():recStart();
 $("#arb").onclick=()=>{autoRec=!autoRec;$("#arb").classList.toggle("off",!autoRec);$("#arbt").textContent="Auto Record: "+(autoRec?"on":"off")};
 $("#mbs").oninput=e=>{blurTau=15*e.target.value};
+$("#lsm").oninput=e=>{lsAmt=Math.max(0,Math.min(1,e.target.value/100));$("#lsl").textContent=lsAmt.toFixed(2)};
 $("#mbl").onchange=e=>{blurOn=e.target.checked};
 $("#mbv").onchange=e=>{blurBg=e.target.checked};
+$("#ilc").onchange=e=>{ilOn=e.target.checked;ilFresh=true;const d=$("#ild");d.disabled=!ilOn;if(!ilOn&&d.checked){d.checked=false;ilDe=false}}; // deinterlacing only makes sense on an interlaced picture
+$("#ild").onchange=e=>{ilDe=e.target.checked&&ilOn;ilFresh=true;yFresh=true;if(ilDe)yBad=false};
 // Send RWT: the app encodes its own Required Weekly Test (3 SAME headers, 1 s, 3 EOM bursts; no attention tone, no message)
 // FIPS converter: 5-digit state+county FIPS becomes the 6-digit SAME location code (leading 0 = whole county); a 6-digit SAME code is kept; 00000 = the whole United States
 function rwFips(){const v=$("#rwf").value.trim(),t=v?v.split(/[\s,;]+/).filter(Boolean):[],ok=[],bad=[];
@@ -878,7 +1069,7 @@ let bgIv=0;document.addEventListener("visibilitychange",()=>{if(document.hidden)
 // Saved settings: stored in this browser (localStorage) whenever something changes or the page closes, and restored on load. Imported files (image, video, tune audio) cannot be saved.
 const SKEY="easyweb-settings-v1";let restoring=true,saveT=0;
 const rv=n=>{const e=document.querySelector("[name="+n+"]:checked");return e?e.value:null};
-function collect(){return{wideMode:widescreenMode,stretchMedia,md:rv("md"),cm:rv("cm"),spn:$("#spn").value,tuo:$("#tuo").checked,tuc:$("#tuc").value,mco:$("#mco").checked,pvo:$("#pvo").checked,mbl:$("#mbl").checked,mbs:$("#mbs").value,mbv:$("#mbv").checked,mv:$("#mv").value,yr:$("#yr").value,tz:$("#tz").value,rwo:$("#rwo").value,rwid:$("#rwid").value,rwf:$("#rwf").value,sh:$("#sh").value,cust:cust?{text:cust.text,scroll:cust.scroll}:null,cgen,crawlBg,fxOn,fxNoise,fw,autoRec}}
+function collect(){return{wideMode:widescreenMode,stretchMedia,md:rv("md"),cm:rv("cm"),spn:$("#spn").value,tuo:$("#tuo").checked,tuc:$("#tuc").value,mco:$("#mco").checked,pvo:$("#pvo").checked,mbl:$("#mbl").checked,mbs:$("#mbs").value,mbv:$("#mbv").checked,ilc:$("#ilc").checked,ild:$("#ild").checked,lsm:$("#lsm").value,mv:$("#mv").value,yr:$("#yr").value,tz:$("#tz").value,rwo:$("#rwo").value,rwid:$("#rwid").value,rwf:$("#rwf").value,sh:$("#sh").value,cust:cust?{text:cust.text,scroll:cust.scroll}:null,cgen,crawlBg,fxOn,fxNoise,fw,autoRec}}
 function saveSet(){if(restoring)return;try{localStorage.setItem(SKEY,JSON.stringify(collect()))}catch(e){}}
 function saveSoon(){if(restoring)return;clearTimeout(saveT);saveT=setTimeout(saveSet,300)}
 function fire(e,t){e.dispatchEvent(new Event(t,{bubbles:true}))}
@@ -889,7 +1080,7 @@ function restoreSet(){let d=null;try{d=JSON.parse(localStorage.getItem(SKEY)||"n
   if(typeof d.wideMode==="boolean"){widescreenMode=d.wideMode;$("#wideMode").checked=widescreenMode}
 
   ["md","cm"].forEach(n=>{if(d[n]){const r=document.querySelector("[name="+n+"][value=\""+d[n]+"\"]");if(r){r.checked=true;fire(r,"change")}}});
-  ["spn","tuo","tuc","mco","pvo","mbl","mbs","mbv","mv","yr","tz","rwo","rwid","rwf","sh"].forEach(k=>setV("#"+k,d[k]));
+  ["spn","tuo","tuc","mco","pvo","mbl","mbs","mbv","ilc","ild","lsm","mv","yr","tz","rwo","rwid","rwf","sh"].forEach(k=>setV("#"+k,d[k]));
   const click=(id,get,want)=>{for(let i=0;i<4&&get()!==want;i++)$(id).click()};
   if(typeof d.fw==="string")setFw(d.fw);
   if(typeof d.autoRec==="boolean")click("#arb",()=>autoRec,d.autoRec);
