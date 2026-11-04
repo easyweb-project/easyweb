@@ -378,22 +378,8 @@ const evFull=c=>D.EVENTS[c]||D.EVENTS["??"+c[2]]||"an Unrecognized Event";
 const ENC={RMT:"Required Monthly Test",RWT:"Required Weekly Test",ADR:"Administrative Message",AVA:"Avalanche Watch",AVW:"Avalanche Warning",BZW:"Blizzard Warning",CAE:"Child Abduction Emergency",CDW:"Civil Danger Warning",CEM:"Civil Emergency Message",CFA:"Coastal Flood Watch",CFW:"Coastal Flood Warning",DMO:"Practice/Demo Warning",DSW:"Dust Storm Warning",EQW:"Earthquake Warning",EVI:"Evacuation Immediate",FFS:"Flash Flood Statement",FFA:"Flash Flood Watch",FFW:"Flash Flood Warning",FLS:"Flood Statement",FLA:"Flood Watch",FLW:"Flood Warning",FRW:"Fire Warning",HMW:"Hazardous Materials Warning",HLS:"Hurricane Statement",HUA:"Hurricane Watch",HUW:"Hurricane Warning",HWA:"High Wind Watch",HWW:"High Wind Warning",LAE:"Local Area Emergency",LEW:"Law Enforcement Warning",NIC:"National Information Center",NMN:"Network Message Notification",NPT:"National Periodic Test",NUW:"Nuclear Power Plant Warning",RHW:"Radiological Hazard Warning",SMW:"Special Marine Warning",SPS:"Special Weather Statement",SPW:"Shelter in Place Warning",SVA:"Severe Thunderstorm Watch",SVR:"Severe Thunderstorm Warning",SVS:"Severe Weather Statement",TOE:"911 Telephone Outage Emergency",TOA:"Tornado Watch",TOR:"Tornado Warning",TRA:"Tropical Storm Watch",TRW:"Tropical Storm Warning",TSA:"Tsunami Watch",TSW:"Tsunami Warning",VOW:"Volcano Warning",WSA:"Winter Storm Watch",WSW:"Winter Storm Warning"};
 for(const k in ENC)D.EVENTS[k]=(/^[AEIOU]/i.test(ENC[k])?"an ":"a ")+ENC[k];
 D.ORGS.CIV="The Civil Authorities";for(const k in D.EVENTS)EV[k]=plain(D.EVENTS[k]);for(const k in D.ORGS)ORG[k]=plain(D.ORGS[k]);
-const MARINE=/^(57|58|59|61|65|73|75|77|91|92|93|94|96|97|98)/,
-STS={AL:"Alabama",CA:"California",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",IL:"Illinois",IN:"Indiana",LA:"Louisiana",MA:"Massachusetts",MD:"Maryland",ME:"Maine",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",NC:"North Carolina",NH:"New Hampshire",NJ:"New Jersey",NY:"New York",OH:"Ohio",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",TX:"Texas",VA:"Virginia",WA:"Washington",WI:"Wisconsin"},
-DIR={N:"North",S:"South",E:"East",W:"West",NE:"Northeast",NW:"Northwest",SE:"Southeast",SW:"Southwest"},DEG={N:"north",S:"south",E:"east",W:"west"};
-function marineName(n){let t=n.replace(/,\s*(PZ|PK|PH|PS|PM|AN|AM|GM|LS|LM|LH|LC|LE|LO|SL)$/,"");
- t=t.replace(/fromOcracoke/g,"from Ocracoke").replace(/\bNof\b/g,"N of").replace(/Pacfic/g,"Pacific").replace(/Chintoteague/g,"Chincoteague").replace(/Coloardo/g,"Colorado").replace(/Santa Roas/g,"Santa Rosa").replace(/Michigan City in\b/g,"Michigan City IN")
-  .replace(/\bU\.S\. Virgin Islands\b/g,"United States Virgin Islands").replace(/\bUSVI\b/g,"United States Virgin Islands").replace(/\bU\.S\.(?=\s|$)/g,"United States").replace(/\bUS(?=[\s\/-])/g,"United States")
-  .replace(/\bE N Pacific\b/g,"Eastern North Pacific").replace(/\bW N Atlantic\b/g,"Western North Atlantic").replace(/\bSC Pacific\b/g,"South Central Pacific").replace(/\bC Pacific\b/g,"Central Pacific").replace(/\bW Pacific\b/g,"Western Pacific")
-  .replace(/\bWC\b/g,"West Coast").replace(/\bEC\b/g,"East Coast")
-  .replace(/(\d+(?:\.\d+)?)\s*Degrees\s*([NSEW])\b/gi,(m,a,d)=>a+" degrees "+DEG[d.toUpperCase()])
-  .replace(/(\d+(?:\.\d+)?)\s*([NSEW])\b/g,(m,a,d)=>a+" degrees "+DEG[d])
-  .replace(/(\d)\s*nm\b/gi,"$1 nautical miles").replace(/\b(\d+)\s*FM\b/g,"$1 fathoms").replace(/\bnm\b/gi,"nautical miles")
-  .replace(/\bPt\.?(?=\s)/g,"Point").replace(/\bSte?\.?(?=\s)/g,"Saint").replace(/\bLt\.?(?=\s|$)/g,"Light")
-  .replace(/\bN\. Carolina\b/g,"North Carolina").replace(/\bN Carolina\b/g,"North Carolina")
-  .replace(/\b(NE|NW|SE|SW|N|S|E|W)\b(?=\s)(\s+of\b)?/g,(m,d,of,off)=>off===0?DIR[d]+(of||""):(of?DIR[d].toLowerCase()+of:DIR[d]))
-  .replace(/\b(AL|CA|CT|DE|FL|GA|IL|IN|LA|MA|MD|ME|MI|MN|MS|NC|NH|NJ|NY|OH|OR|PA|RI|SC|TX|VA|WA|WI)\b/g,m=>STS[m]);
- return t.replace(/\s{2,}/g," ").replace(/^./,c=>c.toUpperCase())}
+const MARINE=/^(57|58|59|61|65|73|75|77|91|92|93|94|96|97|98)/;
+function marineName(n){return n.replace(/,\s*(PZ|PK|PH|PS|PM|AN|AM|GM|LS|LM|LH|LC|LE|LO|SL)$/,"")}
 function locName(l){const n=D.SAME[l.slice(1)],p=D.SUBDIV[l[0]];if(!n)return"Unknown Area ("+l+")";if(MARINE.test(l.slice(1)))return(p?p+" ":"")+marineName(n);const i=n.lastIndexOf(", ");if(i<0)return fw!=="8"?n.replace(/^All of /,"State of "):n;const nm=n.slice(0,i),st=n.slice(i+2),cm=nm.match(/^City of (.+)$/);if(cm)return(p?p+" ":"")+cm[1]+", city, "+st;return(p?p+" ":"")+nm.replace(/ County\b/,"")+" "+st}
 let selYear="",selTZ="";
 const tzo=()=>selTZ?{timeZone:selTZ}:{};
