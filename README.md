@@ -24,3 +24,4 @@ v1.00 - initial release
 v1.01 - fixes a bug where you cannot upload audio and fixes the 24 fps glitch.
 v1.02 - accurately decodes EANs, fixes tune-to screen and alert crawl
 v1.03 - added a clear EAS log button and call-sign override
+v1.10 - added older firmware releases, fixed grey color for more accuracy, added Local Access Alerts, added an option for a short RWT, fixed scroll positions 10 and 11, added a confirmation message for aborting EANs, and fixed the LCD screen.
