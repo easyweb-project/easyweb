@@ -109,8 +109,8 @@ The fans for enjoying!</p>
 <div id="rwfl" style="font-size:13px;color:#aaa;margin:-4px 0 8px"></div>
 <div class="row"><input type="text" id="sh" spellcheck="false" autocomplete="off" placeholder="Type a full SAME header: ZCZC-WXR-TOR-051059+0030-3051523-KLWX/NWS-" aria-label="SAME header encoder and decoder"><button class="bs" id="shb">OK!</button></div>
 <div class="row"><button class="bv" id="ami">Import audio message</button><button class="bv" id="amr">Record microphone</button><button class="bs" id="amc">Clear</button></div>
-<div class="row"><input type="text" id="amf" readonly aria-label="Alert audio message" placeholder="No audio message loaded"></div>
-<input type="file" id="amfile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.aiff,.caf,.opus" hidden>
+<div class="row"><input type="text" id="amf" readonly="" aria-label="Alert audio message" placeholder="No audio message loaded"></div>
+<input type="file" id="amfile" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.aiff,.caf,.opus" hidden="">
 <div id="shl" style="font-size:13px;color:#aaa;margin:-4px 0 8px;overflow-wrap:anywhere"></div>
 <div class="row"><input type="text" id="csg" maxlength="8" spellcheck="false" autocomplete="off" placeholder="Callsign override (8 characters max)" aria-label="Callsign override for decoded and encoded alerts"></div>
 <div class="row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" id="mbl"> Motion blur</label><input type="range" id="mbs" min="1" max="10" value="5" aria-label="Motion blur strength"></div>
@@ -378,7 +378,23 @@ const evFull=c=>D.EVENTS[c]||D.EVENTS["??"+c[2]]||"an Unrecognized Event";
 const ENC={RMT:"Required Monthly Test",RWT:"Required Weekly Test",ADR:"Administrative Message",AVA:"Avalanche Watch",AVW:"Avalanche Warning",BZW:"Blizzard Warning",CAE:"Child Abduction Emergency",CDW:"Civil Danger Warning",CEM:"Civil Emergency Message",CFA:"Coastal Flood Watch",CFW:"Coastal Flood Warning",DMO:"Practice/Demo Warning",DSW:"Dust Storm Warning",EQW:"Earthquake Warning",EVI:"Evacuation Immediate",FFS:"Flash Flood Statement",FFA:"Flash Flood Watch",FFW:"Flash Flood Warning",FLS:"Flood Statement",FLA:"Flood Watch",FLW:"Flood Warning",FRW:"Fire Warning",HMW:"Hazardous Materials Warning",HLS:"Hurricane Statement",HUA:"Hurricane Watch",HUW:"Hurricane Warning",HWA:"High Wind Watch",HWW:"High Wind Warning",LAE:"Local Area Emergency",LEW:"Law Enforcement Warning",NIC:"National Information Center",NMN:"Network Message Notification",NPT:"National Periodic Test",NUW:"Nuclear Power Plant Warning",RHW:"Radiological Hazard Warning",SMW:"Special Marine Warning",SPS:"Special Weather Statement",SPW:"Shelter in Place Warning",SVA:"Severe Thunderstorm Watch",SVR:"Severe Thunderstorm Warning",SVS:"Severe Weather Statement",TOE:"911 Telephone Outage Emergency",TOA:"Tornado Watch",TOR:"Tornado Warning",TRA:"Tropical Storm Watch",TRW:"Tropical Storm Warning",TSA:"Tsunami Watch",TSW:"Tsunami Warning",VOW:"Volcano Warning",WSA:"Winter Storm Watch",WSW:"Winter Storm Warning"};
 for(const k in ENC)D.EVENTS[k]=(/^[AEIOU]/i.test(ENC[k])?"an ":"a ")+ENC[k];
 D.ORGS.CIV="The Civil Authorities";for(const k in D.EVENTS)EV[k]=plain(D.EVENTS[k]);for(const k in D.ORGS)ORG[k]=plain(D.ORGS[k]);
-function locName(l){const n=D.SAME[l.slice(1)],p=D.SUBDIV[l[0]];if(!n)return"Unknown Area ("+l+")";const i=n.lastIndexOf(", ");if(i<0)return fw!=="8"?n.replace(/^All of /,"State of "):n;const nm=n.slice(0,i),st=n.slice(i+2),cm=nm.match(/^City of (.+)$/);if(cm)return(p?p+" ":"")+cm[1]+", city, "+st;return(p?p+" ":"")+nm.replace(/ County\b/,"")+" "+st}
+const MARINE=/^(57|58|59|61|65|73|75|77|91|92|93|94|96|97|98)/,
+STS={AL:"Alabama",CA:"California",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",IL:"Illinois",IN:"Indiana",LA:"Louisiana",MA:"Massachusetts",MD:"Maryland",ME:"Maine",MI:"Michigan",MN:"Minnesota",MS:"Mississippi",NC:"North Carolina",NH:"New Hampshire",NJ:"New Jersey",NY:"New York",OH:"Ohio",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",SC:"South Carolina",TX:"Texas",VA:"Virginia",WA:"Washington",WI:"Wisconsin"},
+DIR={N:"North",S:"South",E:"East",W:"West",NE:"Northeast",NW:"Northwest",SE:"Southeast",SW:"Southwest"},DEG={N:"north",S:"south",E:"east",W:"west"};
+function marineName(n){let t=n.replace(/,\s*(PZ|PK|PH|PS|PM|AN|AM|GM|LS|LM|LH|LC|LE|LO|SL)$/,"");
+ t=t.replace(/fromOcracoke/g,"from Ocracoke").replace(/\bNof\b/g,"N of").replace(/Pacfic/g,"Pacific").replace(/Chintoteague/g,"Chincoteague").replace(/Coloardo/g,"Colorado").replace(/Santa Roas/g,"Santa Rosa").replace(/Michigan City in\b/g,"Michigan City IN")
+  .replace(/\bU\.S\. Virgin Islands\b/g,"United States Virgin Islands").replace(/\bUSVI\b/g,"United States Virgin Islands").replace(/\bU\.S\.(?=\s|$)/g,"United States").replace(/\bUS(?=[\s\/-])/g,"United States")
+  .replace(/\bE N Pacific\b/g,"Eastern North Pacific").replace(/\bW N Atlantic\b/g,"Western North Atlantic").replace(/\bSC Pacific\b/g,"South Central Pacific").replace(/\bC Pacific\b/g,"Central Pacific").replace(/\bW Pacific\b/g,"Western Pacific")
+  .replace(/\bWC\b/g,"West Coast").replace(/\bEC\b/g,"East Coast")
+  .replace(/(\d+(?:\.\d+)?)\s*Degrees\s*([NSEW])\b/gi,(m,a,d)=>a+" degrees "+DEG[d.toUpperCase()])
+  .replace(/(\d+(?:\.\d+)?)\s*([NSEW])\b/g,(m,a,d)=>a+" degrees "+DEG[d])
+  .replace(/(\d)\s*nm\b/gi,"$1 nautical miles").replace(/\b(\d+)\s*FM\b/g,"$1 fathoms").replace(/\bnm\b/gi,"nautical miles")
+  .replace(/\bPt\.?(?=\s)/g,"Point").replace(/\bSte?\.?(?=\s)/g,"Saint").replace(/\bLt\.?(?=\s|$)/g,"Light")
+  .replace(/\bN\. Carolina\b/g,"North Carolina").replace(/\bN Carolina\b/g,"North Carolina")
+  .replace(/\b(NE|NW|SE|SW|N|S|E|W)\b(?=\s)(\s+of\b)?/g,(m,d,of,off)=>off===0?DIR[d]+(of||""):(of?DIR[d].toLowerCase()+of:DIR[d]))
+  .replace(/\b(AL|CA|CT|DE|FL|GA|IL|IN|LA|MA|MD|ME|MI|MN|MS|NC|NH|NJ|NY|OH|OR|PA|RI|SC|TX|VA|WA|WI)\b/g,m=>STS[m]);
+ return t.replace(/\s{2,}/g," ").replace(/^./,c=>c.toUpperCase())}
+function locName(l){const n=D.SAME[l.slice(1)],p=D.SUBDIV[l[0]];if(!n)return"Unknown Area ("+l+")";if(MARINE.test(l.slice(1)))return(p?p+" ":"")+marineName(n);const i=n.lastIndexOf(", ");if(i<0)return fw!=="8"?n.replace(/^All of /,"State of "):n;const nm=n.slice(0,i),st=n.slice(i+2),cm=nm.match(/^City of (.+)$/);if(cm)return(p?p+" ":"")+cm[1]+", city, "+st;return(p?p+" ":"")+nm.replace(/ County\b/,"")+" "+st}
 let selYear="",selTZ="";
 const tzo=()=>selTZ?{timeZone:selTZ}:{};
 const dts=d=>{const f=new Intl.DateTimeFormat("en-US",{...tzo(),year:"2-digit",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hourCycle:"h23"}).formatToParts(d),v=t=>f.find(x=>x.type===t).value;return`${v("month")}/${v("day")}/${v("year")} ${v("hour")}:${v("minute")}:${v("second")}`};
@@ -392,12 +408,12 @@ function alarm(s){const D={Warning:3,Watch:2.5,Advisory:2,Statement:1.5,Informat
  const o=ctx.createOscillator(),gn=ctx.createGain(),t=ctx.currentTime;o.frequency.value=1050;gn.gain.setValueAtTime(.12,t);gn.gain.setValueAtTime(.12,t+D-.1);gn.gain.linearRampToValueAtTime(0,t+D);o.connect(gn);gn.connect(ctx.destination);if(rdest)gn.connect(rdest);o.start(t);o.stop(t+D)}
 const cv=$("#cv"),mainG=cv.getContext("2d"),vid=$("#vid");let g=mainG,lcv=null,lcx=null,blurBg=false;const fmtT=d=>d.toUTCString().slice(17,22);
 let lastCur=null,cgen=true,mode="full",cur=null,note="",SCR="menu",curAu,alerts=[],queue=[],ctx,mons=[],mid=0,selMon=null,dispQ=[],playQ=[],playingA=false;
-const evN=m=>m.laa?"DIRECT COMMUNITY ACCESS":plain(evFull(m.evt)),issTxt=m=>m.laa?"HAS INITIATED A":"Issued "+art(evN(m)),orgN=m=>m.laa?"A LOCAL AUTHORITY":fw!=="8"&&m.org==="EAS"?"Broadcast Station\nor Cable System":ORG[m.org]||m.org;
+const evN=m=>m.laa?"DIRECT COMMUNITY ACCESS":plain(evFull(m.evt)),issTxt=m=>m.laa?"HAS INITIATED A":" Issued "+art(evN(m)),orgN=m=>m.laa?"A LOCAL AUTHORITY":fw!=="8"&&m.org==="EAS"?"Broadcast Station\nor Cable System":ORG[m.org]||m.org;
 const setNote=s=>{note=s;setTimeout(()=>{if(note===s)note=""},6000)};
 // CGEN screen: 29 px type at 79% width on a 640x480 raster
 let cmode="bw";const CM={bw:{bg:"rgb(8,8,8)",fg:"rgb(204,204,204)",ol:null},gk:{bg:"rgb(85,85,85)",fg:"rgb(8,8,8)",ol:null},go:{bg:"rgb(85,85,85)",fg:"rgb(226,226,226)",ol:"#000"}};const blankC=()=>cmode==="bw"?CM.bw.bg:"#000";
 const FONT="29px STV5730A, monospace",SX=.79;
-let blurTau=75,lastBt=0,blurOn=false,bc=null,bcx=null,tc=null,tcx=null,bfresh=true,rec=null,rdest=null,muteOn=false,muteCrawl=true,pauseOn=true,blackOn=true,holdOn=false,vidRes=true,fz=null,blackUntil=null,lastPlay=null,align=false,crawlBg=true,bgImg=null,bgVid=null,cust=null,custBlank=0,cmBlank=0,alBlank=0,abortT=0;const CRAWL_SPEED=225*225/480/1000,CRAWL_DELAY=5000,START_DELAY=500,END_DELAY=500,PAGE_DELAY=3000,TONE_DELAY=4000,BLACK_HOLD=500; // page: 3 s after decode; tones: 4 s after the page; black screen 1 s before the video returns // crawl setting 240 (slower than the old 225); 5 s pause between crawl passes
+let blurTau=75,lastBt=0,blurOn=false,bc=null,bcx=null,tc=null,tcx=null,bfresh=true,rec=null,recHide=false,rdest=null,muteOn=false,muteCrawl=true,pauseOn=true,blackOn=true,holdOn=false,vidRes=true,fz=null,blackUntil=null,lastPlay=null,align=false,crawlBg=true,bgImg=null,bgVid=null,cust=null,custBlank=0,cmBlank=0,alBlank=0,abortT=0;const CRAWL_SPEED=225*225/480/1000,CRAWL_DELAY=5000,START_DELAY=500,END_DELAY=500,PAGE_DELAY=3000,TONE_DELAY=4000,BLACK_HOLD=500; // page: 3 s after decode; tones: 4 s after the page; black screen 1 s before the video returns // crawl setting 240 (slower than the old 225); 5 s pause between crawl passes
 function tx(s,cx,y,left){g.save();g.font=FONT;g.textBaseline="middle";g.scale(SX,1);const w=g.measureText(s).width,C=CM[cmode],px=left?cx/SX:cx/SX-w/2;
  const one=dx=>{if(C.ol){g.fillStyle=C.ol;const d=2/SX;g.fillText(s,px+dx,y-2);g.fillText(s,px+dx,y+2);g.fillText(s,px+dx-d,y);g.fillText(s,px+dx+d,y)}g.fillStyle=C.fg;g.fillText(s,px+dx,y)};
  one(0);g.restore();return w*SX}
@@ -449,7 +465,7 @@ function frame(now){g.setTransform(1,0,0,1,0,0);g.fillStyle="#000";g.fillRect(0,
   // one uniform spatial smear for all CGEN content (static and crawl alike); no temporal blend, so the crawl isn't blurred twice
   {const rr=blurTau/15*.35*K,NT=7;tcx.setTransform(1,0,0,1,0,0);tcx.globalAlpha=1;tcx.clearRect(0,0,tc.width,tc.height);tcx.drawImage(cv,0,0);g.setTransform(1,0,0,1,0,0);for(let i=0;i<NT;i++){g.globalAlpha=1/(i+1);g.drawImage(tc,(i/(NT-1)*2-1)*rr,0)}g.globalAlpha=1}}
  // white outline: drawn after the motion blur so it stays sharp, and left out while recording so it is not in the saved video
- if(!rec){g.save();g.globalAlpha=1;g.setTransform(K,0,0,K,(RW-640*K)/2,(RH-480*K)/2);g.strokeStyle="#fff";g.lineWidth=2/K;g.strokeRect(1/K,1/K,640-2/K,480-2/K);g.restore()}
+ if(!rec&&!recHide){g.save();g.globalAlpha=1;g.setTransform(K,0,0,K,(RW-640*K)/2,(RH-480*K)/2);g.strokeStyle="#fff";g.lineWidth=2/K;g.strokeRect(1/K,1/K,640-2/K,480-2/K);g.restore()}
  if(lastCur&&!cur&&!dispQ.length&&!playQ.length&&!playingA){if(autoRecOn)setTimeout(()=>{if(autoRecOn&&rec&&!cur&&!playingA&&!dispQ.length&&!playQ.length)recStop()},1500);gtail={org:orgOf(lastCur.a),txt:lastCur.a.text||"",scr:lastCur.a.scr,until:performance.now()+5000};gph="";gscr=gtail.scr;lcd();setTimeout(lcd,5100)}lastCur=cur;
  if(!rafP){rafP=true;requestAnimationFrame(raf)}}
 function drawCust(now){const y=65+36*spLayout(false).sc;
@@ -461,15 +477,15 @@ function drawCust(now){const y=65+36*spLayout(false).sc;
 function tapEl(el){if(!rdest||!ctx||el._tap)return;try{const n=ctx.createMediaElementSource(el);el._tap=true;n.connect(ctx.destination);n.connect(rdest)}catch(e){}}
 // Auto Record: starts the CGEN recording when a decoded alert goes on the CGEN and saves the file once the alert, its audio and any queued alerts are finished
 let autoRec=false,autoRecOn=false;
-function recStart(){if(rec)return;ensure();ctx.resume();if(!rdest){rdest=ctx.createMediaStreamDestination();const o=ctx.createOscillator(),z=ctx.createGain();z.gain.value=0;o.connect(z);z.connect(rdest);o.start()}
+function recStart(){if(rec)return;recHide=true;ensure();ctx.resume();if(!rdest){rdest=ctx.createMediaStreamDestination();const o=ctx.createOscillator(),z=ctx.createGain();z.gain.value=0;o.connect(z);z.connect(rdest);o.start()}
  mons.forEach(M=>{if(M.kind==="url"&&M.gain&&!M.rt){try{M.gain.connect(rdest);M.rt=true}catch(e){}}});if(bgVid)tapEl(bgVid);
- let vs;try{vs=cv.captureStream(60);try{vs.getVideoTracks()[0].applyConstraints({frameRate:60}).catch(()=>{})}catch(e){}}catch(e){return setNote("RECORD BLOCKED BY VIDEO")}
+ try{frame(performance.now())}catch(e){}let vs;try{vs=cv.captureStream(60);try{vs.getVideoTracks()[0].applyConstraints({frameRate:60}).catch(()=>{})}catch(e){}}catch(e){recHide=false;return setNote("RECORD BLOCKED BY VIDEO")}
  const T=["video/mp4;codecs=avc1.64002A,mp4a.40.2","video/mp4;codecs=avc1.640028,mp4a.40.2","video/mp4;codecs=avc1.4D0028,mp4a.40.2","video/mp4;codecs=avc1.42E01E,mp4a.40.2","video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"],mt=window.MediaRecorder&&T.find(t=>MediaRecorder.isTypeSupported(t));
- if(!mt)return setNote("RECORD NOT SUPPORTED");
- let r;try{r=new MediaRecorder(new MediaStream([...vs.getVideoTracks(),...rdest.stream.getAudioTracks()]),{mimeType:mt,videoBitsPerSecond:12e6,audioBitsPerSecond:192e3})}catch(e){return setNote("RECORD NOT SUPPORTED")}
+ if(!mt){recHide=false;return setNote("RECORD NOT SUPPORTED")}
+ let r;try{r=new MediaRecorder(new MediaStream([...vs.getVideoTracks(),...rdest.stream.getAudioTracks()]),{mimeType:mt,videoBitsPerSecond:12e6,audioBitsPerSecond:192e3})}catch(e){recHide=false;return setNote("RECORD NOT SUPPORTED")}
  const ch=[];r.ondataavailable=e=>{if(e.data&&e.data.size)ch.push(e.data)};
  r.onstop=()=>{const ext=mt.startsWith("video/mp4")?"mp4":"webm",u=URL.createObjectURL(new Blob(ch,{type:mt.split(";")[0]})),a=document.createElement("a"),d=new Date,p=n=>String(n).padStart(2,"0");
-  a.href=u;a.download=`EASyWEB-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),6e4);setNote("RECORDING SAVED")};
+  a.href=u;a.download=`EASyWEB-${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}.${ext}`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),6e4);setNote("RECORDING SAVED");if(!rec)recHide=false};
  r.start(1000);rec={r,t0:performance.now(),iv:setInterval(()=>{const t=Math.floor((performance.now()-rec.t0)/1e3);$("#rec").textContent="Stop "+String(Math.floor(t/60)).padStart(2,"0")+":"+String(t%60).padStart(2,"0")},500)};
  $("#rec").textContent="Stop 00:00";$("#rec").classList.add("on");setNote("RECORDING")}
 function recStop(){if(!rec)return;autoRecOn=false;clearInterval(rec.iv);const r=rec.r;rec=null;try{r.stop()}catch(e){}$("#rec").textContent="Record";$("#rec").classList.remove("on")}
