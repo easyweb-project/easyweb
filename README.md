@@ -8,6 +8,7 @@ EASyWEB is designed as an EAS decoder, not a full ENDEC. Technically, you can en
 https://youtube.com/@gigabyte97-z9b for programming most of the way
 https://youtube.com/@unixproto and imharv.dev for the idea and inspiration
 https://youtube.com/@jim_9996, https://youtube.com/@verysmartdummy, https://youtube.com/@theguyeasmocks https://youtube.com/@leviathan7627, and https://youtube.com/@xyzlojones for beta testing
+https://youtube.com/@WildDiamond07 for a few ideas
 Trilithic for existing
 The fans for enjoying!
 
