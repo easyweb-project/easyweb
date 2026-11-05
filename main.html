@@ -114,6 +114,7 @@ The fans for enjoying!</p>
 <div class="row"><input type="text" id="lao" autocomplete="off" placeholder="Originator (default: A LOCAL AUTHORITY)" aria-label="Custom Local Access Alert originator"></div>
 <div class="row"><input type="text" id="lai" autocomplete="off" placeholder="Issued a(n) text (default: HAS INITIATED A)" aria-label="Custom Local Access Alert issued text"></div>
 <div class="row"><input type="text" id="lac" autocomplete="off" placeholder="Crawl (default: A LOCAL AUTHORITY HAS INITIATED A DIRECT COMMUNITY ACCESS)" aria-label="Custom Local Access Alert crawl"></div>
+<div class="row"><button class="bs" id="lasv">Save text</button></div>
 <div class="row"><select id="rwo" aria-label="RWT originator"><option value="EAS">EAS Participant</option><option value="CIV">Civil Authorities</option><option value="WXR">National Weather Service</option><option value="PEP">Primary Entry Point</option></select><button class="bv" id="rwt">Send RWT</button></div>
 <div class="row"><button class="bv" id="rwts">Short RWT</button></div>
 <div class="row"><input type="text" id="rwid" maxlength="8" placeholder="Call sign / sender ID (8 max)" aria-label="RWT call sign or sender ID, 8 characters maximum"></div>
@@ -417,7 +418,7 @@ function capDate(d,st){const f=new Intl.DateTimeFormat("en-US",{...tzo(),month:"
 // 1: (Originator) has issued a(n) (Alert) for  County ST - County ST. Effective until Month DD- HH:MM XM TZT.  (IPAWS text)
 // 2: ... for the following (State) counties: County - County. The following (State) counties: County - County.  Effective until Month DD - HH:MM XM TZT.  (IPAWS text)   (one group per state, first-seen order)
 // 3: ... for the following counties: County ST - County ST. Effective until HH:MM XM TZT.  (IPAWS text)
-// 4: like 2 without the spaces: "County- County", single spaces, "Effective until Month DD- HH:MM XM TZT." then the ending (CAP text by default, or "(sender ID)" when the ending toggle is on Sender ID)
+// 4: like 2 without the spaces: "County- County", single spaces, "Effective until Month DD- HH:MM XM TZT." then the ending (CAP text by default, or the sender ID when the ending toggle is on Sender ID)
 function capCty(l){const n=D.SAME[l.slice(1)],p=D.SUBDIV[l[0]];if(!n||MARINE.test(l.slice(1)))return locName(l);const i=n.lastIndexOf(", ");if(i<0)return(p?p+" ":"")+n;return(p?p+" ":"")+n.slice(0,i).replace(/^City of /,"").replace(/ County\b/,"")}
 function capSt(l){const a="0"+l.slice(1,3)+"000",n=D.SAME[l.slice(1,3)+"000"];if(MARINE.test(l.slice(1)))return marFips?a:n?marineName(n):""; // marine group heading: the area name, or the area code when "Show Marine FIPS code" is on
  return n?n.replace(/^All of /,""):""}
@@ -429,7 +430,7 @@ function capCrawl(m,a){const nat=m.locs.some(l=>l.slice(1)==="00000"),f=capFmt,i
  else if(f==="3")w="for the following counties: "+ls.map(locName).join(" - ");
  else w="for  "+ls.map(locName).join(" - ");
  const head=`${orgPh(m.org)} ${m.org==="CIV"?"have":"has"} issued ${evPh(m.evt)} ${w}${sep}Effective until ${capDate(a.exp,f)}.`;
- const idp="("+m.id.trim()+")",tail=capEnd==="id"?idp:capEnd==="both"?(ip?ip+(f==="4"?" ":"  ")+idp:idp):ip;
+ const id=m.id.trim(),idp=f==="4"?" "+id+" ":id,tail=capEnd==="id"?idp:capEnd==="both"?(ip?ip+(f==="4"?" ":"  ")+idp:idp):ip; // sender ID has no brackets: spaces around it instead (Format 4 adds them itself, the others already have the two spaces before it and one after)
  if(f==="4")return head+(tail?" "+tail:"");
  return head+"  "+(tail?tail+" ":"")}
 function e2t0(m,a,x){if(capOn||capOv!==null){const c=capCrawl(m,a);a.crawl=c;return c}const t=`${orgPh(m.org)} ${m.org==="CIV"?"have":"has"} issued ${evPh(m.evt)} for ${m.locs.length===1&&m.locs[0].slice(1)==="00000"?"the United States":"the following counties: "+m.locs.map(locName).join(" - ")}. Effective Until ${dts(a.exp)} ${tzn(a.exp)}.`,i=m.id.trim(),y=x?"  "+x:"";a.crawl=t+(fw==="8"?"  "+i:"")+y;return t+"  "+i+y}
@@ -894,7 +895,8 @@ $("#ild").onchange=e=>{ilDe=e.target.checked&&ilOn;ilFresh=true;yFresh=true;if(i
 function rwFips(){const v=$("#rwf").value.trim(),t=v?v.split(/[\s,;]+/).filter(Boolean):[],ok=[],bad=[];
  t.forEach(c=>{const l=/^\d{5}$/.test(c)?"0"+c:/^\d{6}$/.test(c)?c:null;if(!l||!D.SAME[l.slice(1)])bad.push(c);else if(!ok.includes(l))ok.push(l)});return{ok,bad,over:ok.length>10}}
 $("#rwf").oninput=()=>{const r=rwFips();$("#rwfl").textContent=r.ok.map(l=>l+" = "+locName(l)).join("; ")+(r.bad.length?(r.ok.length?"; ":"")+"Unknown: "+r.bad.join(", "):"")+(r.over?"; Maximum 10 codes":"")};
-const sendRwt=short=>{if(playingA||cur||playQ.length||holdOn)return setNote("ALERT IN PROGRESS");
+const sendRwt=short=>{if(eanBad($("#rwo").value,"RWT")){$("#shl").textContent=EANBLK.why;return setNote(EANBLK.err)} // PEP is blocked in the encoder too
+ if(playingA||cur||playQ.length||holdOn)return setNote("ALERT IN PROGRESS");
  const fp=rwFips();if(fp.bad.length)return setNote("UNKNOWN FIPS "+fp.bad[0]);if(fp.over)return setNote("MAX 10 FIPS CODES");
  const locs=fp.ok.length?fp.ok:["000000"],sid=($("#rwid").value.replace(/[^A-Za-z0-9\/() ]/g,"").slice(0,8)||"EASyWEB/").padEnd(8," ");ensure();
  const n=new Date,p=(v,w)=>String(v).padStart(w,"0"),org=$("#rwo").value,doy=Math.floor((Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate())-Date.UTC(n.getUTCFullYear(),0,0))/864e5),
@@ -936,9 +938,11 @@ $("#amr").onclick=async()=>{
  }catch(err){if(alertStream)alertStream.getTracks().forEach(t=>t.stop());alertStream=null;setNote("MICROPHONE UNAVAILABLE")}
 };
 // SAME header box: enter a header, then OK! encodes it with the optional audio message.
+const EANBLK={err:"EAN ENCODING BLOCKED",why:"Encoding an EAN is blocked on purpose in the built-in encoder. Every SAME code from the PEP and EAN originators is blocked, and so is the EAN event from any originator. This is intentional, not a bug."},eanBad=(o,e)=>o==="PEP"||o==="EAN"||e==="EAN";
 function shParse(v){const t=v.trim().toUpperCase().replace(/\s+$/,"");if(!t)return{err:"TYPE A SAME HEADER"};
  const m=t.match(/^ZCZC-([A-Z]{3})-([A-Z0-9]{3})((?:-\d{6})+)\+(\d{4})-(\d{7})-([^-]{1,8})-$/);
  if(!m)return{err:"BAD HEADER FORMAT",why:"Format: ZCZC-ORG-EEE-PSSCCC+TTTT-JJJHHMM-LLLLLLLL-"};
+ if(m[2]==="EAN"||m[1]==="EAN"||m[1]==="PEP")return EANBLK;
  if(!ENC[m[2]])return{err:"EVENT NOT ALLOWED: "+m[2],why:"Event code "+m[2]+" is not in the valid list."};
  if(!D.ORGS[m[1]])return{err:"UNKNOWN ORIGINATOR "+m[1],why:"Originator must be one of: "+Object.keys(D.ORGS).join(", ")};
  const locs=m[3].slice(1).split("-");if(locs.length>31)return{err:"MAX 31 LOCATIONS"};
@@ -1017,6 +1021,10 @@ function laCustSync(){const ok=fw!=="3"&&$("#las").value==="msg"; // the custom 
  ["#lat","#lao","#lai","#lac"].forEach(q=>{const e=$(q);if(e){e.disabled=!ok;e.title=ok?"":"Choose the Audio message source to use custom text"}})}
 function dtmfPound(){ensure();const t=ctx.currentTime,g=ctx.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.3,t+.005);g.gain.setValueAtTime(.3,t+.195);g.gain.linearRampToValueAtTime(0,t+.2);
  [941,1477].forEach(f=>{const o=ctx.createOscillator();o.frequency.value=f;o.connect(g);o.start(t);o.stop(t+.21)});g.connect(ctx.destination);if(rdest)g.connect(rdest)}
+// Local Access Alert text: "Save text" keeps the title, originator, issued text and crawl in this browser and puts them back on the next visit (saving with all four boxes empty clears the saved copy)
+(()=>{const K="easyweb-laa-v1",F=["lat","lao","lai","lac"];
+ try{const d=JSON.parse(localStorage.getItem(K)||"null");if(d&&typeof d==="object")F.forEach(k=>{if(typeof d[k]==="string")$("#"+k).value=d[k]})}catch(e){}
+ $("#lasv").onclick=()=>{const d={};F.forEach(k=>d[k]=$("#"+k).value);try{if(F.every(k=>!d[k].trim()))localStorage.removeItem(K);else localStorage.setItem(K,JSON.stringify(d));setNote(F.every(k=>!d[k].trim())?"SAVED TEXT CLEARED":"LAA TEXT SAVED")}catch(e){setNote("COULD NOT SAVE")}}})();
 function laUi(on){const b=$("#laa");if(b)b.textContent=on?"End Local Access Alert":"Local Access Alert"}
 function laRestore(){mons.forEach(x=>{x.eanMute=false;if(x.gain&&!x.dead)x.gain.gain.value=gv(x)});if(bgVid&&!playingA)vmute(bgVid,muteHold())}
 function laStop(L){L.over=true;if(L.sp){L.sp.onaudioprocess=null;try{L.sp.disconnect()}catch(e){}}if(L.z){try{L.z.disconnect()}catch(e){}}(L.srcs||[]).forEach(q=>{try{q.stop()}catch(e){}});clearInterval(L.poll);clearTimeout(L.timer);try{if(L.sn)L.sn.stop()}catch(e){}try{if(L.s)L.s.disconnect()}catch(e){}if(L.stream)L.stream.getTracks().forEach(t=>t.stop())}
@@ -1110,25 +1118,25 @@ async function xmlToAudio(f){const bad=m=>{const e=new Error(m);e.xml=m;throw e}
  const fs=48000,GAP=.86,parts=[];let t=0;const add=g=>{parts.push({t,g});t+=g.length/fs};
  for(let i=0;i<3;i++){if(i)t+=GAP;add(genSame(m.raw,fs,.8))}
  t+=1;add(genDual(fs,8,.4));t+=1;
- let au=null;try{const rs=all("resource").find(q=>/audio/i.test(one("mimeType",q))&&(one("derefUri",q)||one("uri",q)));if(rs){let ab;if(one("derefUri",rs))ab=Uint8Array.from(atob(one("derefUri",rs).replace(/\s+/g,"")),c=>c.charCodeAt(0)).buffer;else{const c=new AbortController(),to=setTimeout(()=>c.abort(),8000);try{ab=await(await fetch(one("uri",rs).replace(/^http:/,"https:"),{signal:c.signal})).arrayBuffer()}finally{clearTimeout(to)}} // a linked audio file is fetched when the host allows it; otherwise there is no message audio
+ let au=null,fail="";try{const isAu=q=>/audio|EAS Broadcast/i.test(one("resourceDesc",q)+" "+one("mimeType",q))||/\.(mp3|wav|m4a|aac|ogg|oga|opus|flac)(\?|#|$)/i.test(one("uri",q)),rl=all("resource").filter(q=>one("derefUri",q)||one("uri",q)),rs=rl.find(isAu)||rl.find(q=>one("resourceDesc",q));if(rs){let ab;if(one("derefUri",rs))ab=Uint8Array.from(atob(one("derefUri",rs).replace(/\s+/g,"")),c=>c.charCodeAt(0)).buffer;else{const c=new AbortController(),to=setTimeout(()=>c.abort(),8000);try{ab=await(await fetch(one("uri",rs).replace(/^http:/,"https:"),{signal:c.signal})).arrayBuffer()}finally{clearTimeout(to)}} // a linked audio file is fetched when the host allows it; otherwise there is no message audio
   const ac=mkAC(fs),d=await decAB(ac,ab);try{ac.close()}catch(_){}
-  const o=new Float32Array(Math.round(d.duration*fs));for(let c=0;c<d.numberOfChannels;c++){const ch=d.getChannelData(c);for(let i=0;i<o.length;i++){const k=Math.min(ch.length-1,Math.floor(i*d.sampleRate/fs));o[i]+=ch[k]/d.numberOfChannels}}au=o}}catch(e){au=null}
+  const o=new Float32Array(Math.round(d.duration*fs));for(let c=0;c<d.numberOfChannels;c++){const ch=d.getChannelData(c);for(let i=0;i<o.length;i++){const k=Math.min(ch.length-1,Math.floor(i*d.sampleRate/fs));o[i]+=ch[k]/d.numberOfChannels}}au=o}}catch(e){au=null;fail="XML AUDIO NOT LOADED"}
  if(au){add(au);t+=1}
  for(let i=0;i<3;i++){if(i)t+=GAP;add(genSame("NNNN",fs,.8))}
  const x=new Float32Array(Math.ceil((t+1)*fs));parts.forEach(q=>x.set(q.g,Math.round(q.t*fs)));
  const text=[one("description"),one("instruction")].filter(Boolean).join(" ")||one("headline");
- return{buf:{length:x.length,numberOfChannels:1,sampleRate:fs,getChannelData:()=>x},text}}
+ return{buf:{length:x.length,numberOfChannels:1,sampleRate:fs,getChannelData:()=>x},text,fail}}
 // Import Audio: offline decode of a file
 $("#ba").onclick=()=>$("#fia").click();
 $("#fia").onchange=async e=>{const f=e.target.files[0];e.target.value="";if(!f)return;$("#fa").value=f.name;setNote("DECODING...");await new Promise(r=>setTimeout(r,30));
  const isX=/\.xml$/i.test(f.name)||/xml/i.test(f.type||"");
- try{let buf;if(isX){const r=await xmlToAudio(f);buf=r.buf;capOv=capOn?r.text:null} // CAP XML text only replaces the crawl while CAP Formatting is on; otherwise the normal EASyPLUS crawl is used
+ let xfail="";try{let buf;if(isX){const r=await xmlToAudio(f);buf=r.buf;capOv=capOn?r.text:null;xfail=r.fail} // CAP XML text only replaces the crawl while CAP Formatting is on; otherwise the normal EASyPLUS crawl is used
  else{const ac=mkAC(22050);buf=await decAB(ac,await rdAB(f));try{ac.close()}catch(_){}}
   const x=new Float32Array(buf.length);for(let c=0;c<buf.numberOfChannels;c++){const d=buf.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/buf.numberOfChannels}
   const res=[],dd=new SameDec(buf.sampleRate,m=>{if(!res.some(p=>p.raw===m.raw&&Math.abs(p.t-m.t)<30))res.push(m)},m=>{if(m.final)res.push(m)});for(let i=0;i<x.length;i+=16384)dd.push(x.subarray(i,i+16384));
   res.splice(0,res.length,...gateSeq(res));
   if(!res.length)return setNote("NO SAME FOUND");
-  note="";{const z=res.find(m=>m.type==="ZCZC");gscr=SCR;gsend="";gtail=null;for(const t of (z&&z.evt==="EAN"?[]:["RECEIVING "+(z?z.evt:"EAS"),"RECEIVING ATT TONE","RECORDING AUDIO MSG","RECEIVING EOM"])){gph=t;lcd();await new Promise(r=>setTimeout(r,900))}}queue=[];const fs=buf.sampleRate;res.forEach(m=>{const a=mk(m,f.name,"at "+m.t.toFixed(1)+" s");if(m.type==="ZCZC"){const s=Math.max(0,m.t0-1),n=res.find(r=>r.type==="NNNN"&&r.t>m.t),e=Math.min(x.length/fs,n?n.t+1.5:m.t+60);const inf={};a.seg=fxwav([x.slice(Math.floor(s*fs),Math.floor(e*fs))],fs,inf);a.att=inf.att;a.snd=inf.snd;queue.push(a)}});gph="PROCESSING EAS MSG";gscr=SCR;gsend="";gtail=null;lcd();render();playQueue()}
+  note="";{const z=res.find(m=>m.type==="ZCZC");gscr=SCR;gsend="";gtail=null;for(const t of (z&&z.evt==="EAN"?[]:["RECEIVING "+(z?z.evt:"EAS"),"RECEIVING ATT TONE","RECORDING AUDIO MSG","RECEIVING EOM"])){gph=t;lcd();await new Promise(r=>setTimeout(r,900))}}queue=[];const fs=buf.sampleRate;res.forEach(m=>{const a=mk(m,f.name,"at "+m.t.toFixed(1)+" s");if(m.type==="ZCZC"){const s=Math.max(0,m.t0-1),n=res.find(r=>r.type==="NNNN"&&r.t>m.t),e=Math.min(x.length/fs,n?n.t+1.5:m.t+60);const inf={};a.seg=fxwav([x.slice(Math.floor(s*fs),Math.floor(e*fs))],fs,inf);a.att=inf.att;a.snd=inf.snd;queue.push(a)}});gph="PROCESSING EAS MSG";gscr=SCR;gsend="";gtail=null;lcd();render();playQueue();if(xfail)setNote(xfail)}
  catch(err){setNote(isX?(err&&err.xml)||"BAD XML FILE":"BAD AUDIO FILE")}finally{capOv=null}};
 const resSel=$("#res"),stg=document.querySelector(".stage");
 function syncRes(){const v=RW+"x"+RH,o=[...resSel.options].some(x=>x.value===v);resSel.value=o?v:"custom";$("#cw").value=RW;$("#ch").value=RH;$("#cres").hidden=o}
