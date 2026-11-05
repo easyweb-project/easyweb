@@ -20,6 +20,12 @@ EASyPLUS and Trilithic are owned by VIAVI, Inc. We do not claim to own the trade
 ## AI usage disclaimer:
 Generative AI (Claude and ChatGPT) has been fully used in this project's code. However, the idea, the imagery, the fonts, the documentation, etc. was all done by humans. Yes, we are lazy and we don't know how to code. 
 
+## If you like EASyWEB...
+You can also check out
+https://xpdev.itch.io/easyplus-mini - EASyPLUS simulator for the NES (not made by us, but we thought it was cool)
+https://webdec.imharv.dev - an online based EAS decoder that was the inspiration for this project
+https://eas.tools - a suite of EAS tools for your next EAS mock, you can even generate SAME headers
+
 ## Release notes
 v1.00 - initial release
 v1.01 - fixes a bug where you cannot upload audio and fixes the 24 fps glitch.
@@ -28,3 +34,5 @@ v1.03 - added a clear EAS log button and call-sign override
 v1.10 - added older firmware releases, fixed grey color for more accuracy, added Local Access Alerts, added an option for a short RWT, fixed scroll positions 10 and 11, added a confirmation message for aborting EANs, and fixed the LCD screen.
 v1.11 - added 16:9 aspect ratio.
 v1.20 - added interlacing and deinterlacing, and luma smear (implemented from https://github.com/ntsc-rs/ntsc-rs).
+v1.30 - added CAP alerts, custom LAA messages, EAN test message, fixed marine locations, and fixed the text outline on white + grey text screen.
+v1.30 (November 5 build) - added Discord webhook integration, removed importing XML files.
