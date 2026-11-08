@@ -35,4 +35,4 @@ v1.10 - added older firmware releases, fixed grey color for more accuracy, added
 v1.11 - added 16:9 aspect ratio.
 v1.20 - added interlacing and deinterlacing, and luma smear (implemented from https://github.com/ntsc-rs/ntsc-rs).
 v1.30 - added CAP alerts, custom LAA messages, EAN test message, fixed marine locations, and fixed the text outline on white + grey text screen.
-v1.30 (November 5 build) - added Discord webhook integration, removed importing XML files.
+v1.31 - added Spanish alerts, fixed a marine location, fixed sample rate on EAS tones, added automatic RWTs and FIPS filter.
