@@ -35,3 +35,4 @@ v1.11 - added 16:9 aspect ratio.
 v1.20 - added interlacing and deinterlacing, and luma smear (implemented from https://github.com/ntsc-rs/ntsc-rs).
 v1.30 - added CAP alerts, custom LAA messages, EAN test message, fixed marine locations, and fixed the text outline on white + grey text screen.
 v1.31 - added Spanish alerts, fixed a marine location, fixed sample rate on EAS tones, added automatic RWTs and FIPS filter.
+v1.32 - fixed issue with 4:3 videos suddenly changing back to their original aspect ratio, automatically disabled listening for importing URLs, fixed custom LAA crawl positions, fixed audio decoding while sending alerts, feature to disable decoded RWTs audio and ATT tone, feature to disable selected events, and added camera/screen sharing functionality.
