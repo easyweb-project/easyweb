@@ -7,7 +7,7 @@ EASyWEB is designed as an EAS decoder, not a full ENDEC. Technically, you can en
 ## THANKS TO:
 https://youtube.com/@gigabyte97-z9b for programming most of the way
 https://youtube.com/@unixproto and imharv.dev for the idea and inspiration
-https://youtube.com/@jim_9996, https://youtube.com/@verysmartdummy, https://youtube.com/@theguyeasmocks https://youtube.com/@leviathan7627, and https://youtube.com/@xyzlojones for beta testing
+https://youtube.com/@jim_9996, https://youtube.com/@verysmartdummy, https://youtube.com/@theguyeasmocks https://youtube.com/@leviathan7627, and https://youtube.com/@xyzlojones, https://youtube.com/@WildDiamond07, and https://youtube.com/@CloudysoftCorpWX for suggestions
 Trilithic for existing
 The fans for enjoying!
 
@@ -36,3 +36,4 @@ v1.20 - added interlacing and deinterlacing, and luma smear (implemented from ht
 v1.30 - added CAP alerts, custom LAA messages, EAN test message, fixed marine locations, and fixed the text outline on white + grey text screen.
 v1.31 - added Spanish alerts, fixed a marine location, fixed sample rate on EAS tones, added automatic RWTs and FIPS filter.
 v1.32 - fixed issue with 4:3 videos suddenly changing back to their original aspect ratio, automatically disabled listening for importing URLs, fixed custom LAA crawl positions, fixed audio decoding while sending alerts, feature to disable decoded RWTs audio and ATT tone, feature to disable selected events, and added camera/screen sharing functionality.
+v2.00 - the final major build of EASyWEB, including updated EAS tones, an option to have the 1050 Hz tone be the attention tone, Discord webhook improvements, no duplicate alerts unless acknowledged by the user, when pressing arrow keys, you can see the full EAS log on the LCD, LCD displays now display 8.09 or selected firmware version, EAN test message removed from 8.0, added Spanish tune-to screen, fixed EAN stuff, including the way it works, and not applying the EASyPLUS effects to it, and a bunch of minor fixes. There will be updates in the future, but just know this is the final major release unless more documentation comes out. Thanks to everyone who has supported EASyWEB! (We will still maintain it, don't worry!)
